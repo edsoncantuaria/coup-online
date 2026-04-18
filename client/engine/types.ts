@@ -36,6 +36,18 @@ export interface GameState {
   lastAction?: Action;
   exchangingCards?: Role[];
   losingInfluenceId?: string; // Player ID choice to lose influence
+  /**
+   * Motivo narrativo da perda atual (para overlay dramático).
+   *  - coup: alvo de um Golpe
+   *  - assassinate: alvo de Assassinato resolvido
+   *  - challenge_lost: desafiante errou (quem foi desafiado provou a carta)
+   *  - bluff_caught: foi pego blefando (ação ou bloqueio falso)
+   */
+  losingContext?: {
+    reason: 'coup' | 'assassinate' | 'challenge_lost' | 'bluff_caught';
+    causedByPlayerId?: string;
+    stamp: number;
+  };
   pendingChallenge?: {
     challengerId: string;
     targetId: string;

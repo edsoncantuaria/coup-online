@@ -124,6 +124,16 @@ const PlayerNode = ({
     };
   });
 
+  // Halo externo (faz o ativo "respirar" — presença visual).
+  const haloStyle = useAnimatedStyle(() => {
+    const base = isActing && !isDead ? 1 : 0;
+    const val = glow.value * base;
+    return {
+      opacity: 0.15 + val * 0.35,
+      transform: [{ scale: 1 + val * 0.18 }],
+    };
+  });
+
   return (
     <Pressable
       style={styles.nodeWrapper}
@@ -131,6 +141,9 @@ const PlayerNode = ({
       delayLongPress={320}
       hitSlop={4}
     >
+      {isActing && !isDead && (
+        <Animated.View style={[styles.avatarHalo, haloStyle]} pointerEvents="none" />
+      )}
       <Animated.View style={[styles.avatarRing, ringStyle, isDead && styles.deadRing]}>
         <View style={styles.avatar}>
           <Text style={styles.avatarLetter}>{player.name[0]?.toUpperCase()}</Text>
@@ -195,6 +208,20 @@ interface ArenaTableProps {
   statusKind?: 'idle' | 'action' | 'challenge' | 'block' | 'losing' | 'exchange' | 'over' | 'lobby';
   turnTimer?: number | null;
   transitioning?: boolean;
+  /** Segundos restantes no delay de transição (usados para banner "Em preparação..."). */
+  transitionRemaining?: number | null;
+  /** Nome do próximo jogador que vai atuar — mostrado no banner de preparação. */
+  nextPlayerName?: string | null;
+  /** Quando true, ativa o "foco dinâmico": vinheta periférica + glow central dourado. */
+  spotlight?: boolean;
+  /**
+   * Intensidade do foco dinâmico:
+   *  - idle:   nada (sem tensão)
+   *  - focus:  seu turno / escolha pendente
+   *  - climax: conflito ativo (desafio, bloqueio, sacrifício, reveal)
+   * Quando passado, ignora "spotlight" booleano.
+   */
+  intensity?: 'idle' | 'focus' | 'climax';
   onPlayerLongPress?: (player: any) => void;
 }
 
@@ -223,10 +250,28 @@ export default function ArenaTable({
   statusKind,
   turnTimer,
   transitioning,
+  transitionRemaining,
+  nextPlayerName,
+  spotlight,
+  intensity,
   onPlayerLongPress,
 }: ArenaTableProps) {
   const accent = kindColor(statusKind);
   const statusPulse = useSharedValue(0);
+  // Intensidade em escala contínua: 0 = idle, 0.55 = focus, 1 = climax.
+  const spotlightValue = useSharedValue(0);
+  // Pulse extra só para clímax (faz a vinheta respirar quando há conflito).
+  const climaxPulse = useSharedValue(0);
+
+  // Deriva o alvo de intensidade. `intensity` tem prioridade sobre `spotlight`.
+  const targetIntensity: number = (() => {
+    if (intensity === 'climax') return 1;
+    if (intensity === 'focus') return 0.55;
+    if (intensity === 'idle') return 0;
+    // Fallback para o boolean legado.
+    return spotlight ? 0.55 : 0;
+  })();
+  const isClimax = intensity === 'climax';
 
   useEffect(() => {
     statusPulse.value = withRepeat(
@@ -236,9 +281,51 @@ export default function ArenaTable({
     );
   }, []);
 
+  useEffect(() => {
+    spotlightValue.value = withTiming(targetIntensity, {
+      duration: 520,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [targetIntensity]);
+
+  useEffect(() => {
+    if (isClimax) {
+      climaxPulse.value = withRepeat(
+        withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.quad) }),
+        -1,
+        true
+      );
+    } else {
+      climaxPulse.value = withTiming(0, { duration: 300 });
+    }
+  }, [isClimax]);
+
   const timerRingStyle = useAnimatedStyle(() => ({
     opacity: 0.6 + statusPulse.value * 0.4,
   }));
+
+  // Vinheta periférica (vertical) — intensifica com a tensão.
+  // idle → 0  | focus → ~0.55 | climax → ~0.95 + respiração.
+  const vignetteStyle = useAnimatedStyle(() => {
+    const base = spotlightValue.value;
+    const breath = isClimax ? climaxPulse.value * 0.08 : 0;
+    return {
+      opacity: Math.min(1, base * 0.92 + breath),
+    };
+  });
+  // Vinheta horizontal extra — só aparece no clímax para "apertar" a tela.
+  const sideVignetteStyle = useAnimatedStyle(() => ({
+    opacity: Math.max(0, spotlightValue.value - 0.55) * 1.6,
+  }));
+  // Glow central — aumenta intensidade e escala no clímax.
+  const centerHaloStyle = useAnimatedStyle(() => {
+    const v = spotlightValue.value;
+    const breath = isClimax ? climaxPulse.value * 0.05 : 0;
+    return {
+      opacity: 0.35 + v * 0.65,
+      transform: [{ scale: 1 + v * 0.1 + breath }],
+    };
+  });
   // Posições em arco superior para modo paisagem
   const getPosition = (index: number, total: number): ViewStyle => {
     const arc5: ViewStyle[] = [
@@ -278,6 +365,37 @@ export default function ArenaTable({
 
   return (
     <View style={styles.container}>
+      {/* Vinheta periférica — escurece cantos quando foco no meu turno */}
+      <Animated.View
+        style={[styles.vignette, vignetteStyle]}
+        pointerEvents="none"
+      >
+        <LinearGradient
+          colors={[
+            'rgba(0,0,0,0)',
+            'rgba(0,0,0,0.15)',
+            'rgba(0,0,0,0.55)',
+          ]}
+          start={{ x: 0.5, y: 0.5 }}
+          end={{ x: 0.5, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </Animated.View>
+
+      {/* Vinheta lateral — só no clímax: "aperta" a tela em conflito */}
+      <Animated.View
+        style={[styles.vignette, sideVignetteStyle]}
+        pointerEvents="none"
+      >
+        <LinearGradient
+          colors={['rgba(0,0,0,0.45)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.45)']}
+          locations={[0, 0.5, 1]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </Animated.View>
+
       {/* Mesa */}
       <View style={styles.tableShadow}>
         <LinearGradient
@@ -293,9 +411,11 @@ export default function ArenaTable({
               end={{ x: 0.5, y: 1 }}
               style={styles.tableInner}
             >
-              {/* Ornamento radial suave */}
-              <View style={styles.centerGlowOuter} />
-              <View style={styles.centerGlowInner} />
+              {/* Ornamento radial: 3 camadas (mais presença, feltro premium) */}
+              <Animated.View style={[styles.centerGlowOuter, centerHaloStyle]} />
+              <Animated.View style={[styles.centerGlowInner, centerHaloStyle]} />
+              <View style={styles.tableGrain} pointerEvents="none" />
+              <View style={styles.tableInnerVignette} pointerEvents="none" />
 
               {/* Status central */}
               {!!statusTitle && (
@@ -309,8 +429,28 @@ export default function ArenaTable({
                     <View style={[styles.transitionTag, { borderColor: accent }]}>
                       <View style={[styles.transitionDot, { backgroundColor: accent }]} />
                       <Text style={[styles.transitionText, { color: accent }]}>
-                        RESOLVENDO
+                        {nextPlayerName
+                          ? `EM PREPARAÇÃO · ${nextPlayerName.toUpperCase()}`
+                          : 'RESOLVENDO'}
                       </Text>
+                      {typeof transitionRemaining === 'number' &&
+                        transitionRemaining > 0 && (
+                          <View
+                            style={[
+                              styles.transitionCountdown,
+                              { borderColor: accent },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.transitionCountdownText,
+                                { color: accent },
+                              ]}
+                            >
+                              {transitionRemaining}s
+                            </Text>
+                          </View>
+                        )}
                     </View>
                   )}
                   <Text style={[styles.centerBadgeLabel, { color: accent }]}>
@@ -415,17 +555,33 @@ const styles = StyleSheet.create({
   },
   centerGlowOuter: {
     position: 'absolute',
-    width: '70%',
-    height: '110%',
+    width: '75%',
+    height: '115%',
     borderRadius: 300,
     backgroundColor: 'rgba(198, 161, 91, 0.05)',
   },
   centerGlowInner: {
     position: 'absolute',
-    width: '40%',
-    height: '60%',
+    width: '42%',
+    height: '62%',
     borderRadius: 200,
-    backgroundColor: 'rgba(198, 161, 91, 0.06)',
+    backgroundColor: 'rgba(198, 161, 91, 0.07)',
+  },
+  // Grão sutil: textura "feltro/poker" simulada com listras quase imperceptíveis.
+  tableGrain: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.015)',
+  },
+  // Vinheta interna: escurece as bordas da mesa para dar volume.
+  tableInnerVignette: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 220,
+    borderWidth: 38,
+    borderColor: 'rgba(0,0,0,0.28)',
+  },
+  vignette: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
   },
   centerBadge: {
     paddingVertical: 12,
@@ -472,12 +628,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
     borderWidth: 1,
-    backgroundColor: 'rgba(7,10,15,0.6)',
-    marginBottom: 6,
+    backgroundColor: 'rgba(7,10,15,0.75)',
+    marginBottom: 8,
+    maxWidth: '100%',
   },
   transitionDot: {
     width: 6,
@@ -488,6 +645,19 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '900',
     letterSpacing: 2,
+  },
+  transitionCountdown: {
+    marginLeft: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+    borderWidth: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  transitionCountdownText: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.8,
   },
   timerBadge: {
     marginTop: 8,
@@ -522,6 +692,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(11, 15, 20, 0.85)',
     borderWidth: 2,
+  },
+  avatarHalo: {
+    position: 'absolute',
+    top: -6,
+    left: -6,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 1,
+    borderColor: Theme.colors.gold,
+    backgroundColor: 'rgba(198, 161, 91, 0.06)',
   },
   deadRing: {
     opacity: 0.4,

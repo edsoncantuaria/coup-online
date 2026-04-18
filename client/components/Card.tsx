@@ -112,6 +112,19 @@ export default function Card({ role, isFlipped, isDead, style }: CardProps) {
           </View>
           <Text style={styles.secretText}>SEGREDO REAL</Text>
         </LinearGradient>
+        {/* Specular highlight também na costa da carta */}
+        <LinearGradient
+          colors={[
+            'rgba(255,255,255,0)',
+            'rgba(255,255,255,0.06)',
+            'rgba(255,255,255,0)',
+          ]}
+          locations={[0.35, 0.5, 0.65]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.specular}
+          pointerEvents="none"
+        />
       </Animated.View>
 
       {/* Verso (revelada) - com arte */}
@@ -133,6 +146,23 @@ export default function Card({ role, isFlipped, isDead, style }: CardProps) {
               locations={[0, 0.28, 0.55, 1]}
               style={StyleSheet.absoluteFill}
             />
+
+            {/* Specular highlight — reflexo diagonal (AAA feel) */}
+            <LinearGradient
+              colors={[
+                'rgba(255,255,255,0)',
+                'rgba(255,255,255,0.10)',
+                'rgba(255,255,255,0)',
+              ]}
+              locations={[0.35, 0.5, 0.65]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.specular}
+              pointerEvents="none"
+            />
+
+            {/* Grão fino — textura premium que tira o plástico */}
+            <View style={styles.cardGrain} pointerEvents="none" />
 
             {/* Moldura dourada interna */}
             <View style={styles.innerFrame} pointerEvents="none" />
@@ -258,6 +288,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(198, 161, 91, 0.35)',
+  },
+  specular: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  cardGrain: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 245, 220, 0.014)',
   },
   artHeader: {
     flexDirection: 'row',

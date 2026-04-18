@@ -14,6 +14,7 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   FadeInRight,
+  FadeIn,
   Layout,
 } from 'react-native-reanimated';
 import { Theme } from '../../constants/Theme';
@@ -191,9 +192,37 @@ export default function LogPanel({ logs }: LogPanelProps) {
 
   const lastLog = logs[logs.length - 1] || 'Aguardando início...';
   const lastKind = classifyLog(lastLog);
+  const lastDisplay = stripEmojis(lastLog);
 
   return (
     <>
+      {/* Ticker flutuante: prévia da última linha ao lado do botão (só quando fechado) */}
+      {!isOpen && logs.length > 0 && (
+        <Animated.View
+          // Key força re-entrada do ticker a cada nova linha.
+          key={`tkr-${logs.length}`}
+          entering={FadeInRight.duration(320).springify().damping(16)}
+          style={[
+            styles.ticker,
+            { borderColor: KIND_STYLES[lastKind].bar },
+          ]}
+          pointerEvents="none"
+        >
+          <View
+            style={[
+              styles.tickerBar,
+              { backgroundColor: KIND_STYLES[lastKind].bar },
+            ]}
+          />
+          <Text
+            style={[styles.tickerText, { color: KIND_STYLES[lastKind].color }]}
+            numberOfLines={1}
+          >
+            {lastDisplay}
+          </Text>
+        </Animated.View>
+      )}
+
       {/* Botão compacto circular */}
       <Pressable
         style={({ pressed }) => [
@@ -278,42 +307,55 @@ export default function LogPanel({ logs }: LogPanelProps) {
                   <View style={styles.roundLine} />
                 </View>
 
-                {roundEntries.map((entry) => {
+                {roundEntries.map((entry, localIdx) => {
                   const style = KIND_STYLES[entry.kind];
+                  // Stagger sutil: cada item entra 40ms após o anterior
+                  // (cria cascata orgânica quando o painel abre ou novas
+                  // linhas chegam juntas).
+                  const staggerDelay = Math.min(localIdx * 40, 240);
                   return (
+                    // Wrapper externo cuida do layout (reposicionamento
+                    // quando novos itens são adicionados), para não
+                    // competir com transform/opacity do entering.
                     <Animated.View
                       key={entry.index}
-                      entering={FadeInRight.duration(220)}
                       layout={Layout.springify()}
-                      style={[
-                        styles.logItem,
-                        {
-                          backgroundColor: style.bg,
-                          borderLeftColor: style.bar,
-                        },
-                      ]}
                     >
-                      {entry.kind !== 'neutral' && (
-                        <View
-                          style={[
-                            styles.kindBadge,
-                            { borderColor: style.bar },
-                          ]}
-                        >
-                          <Text style={[styles.kindBadgeText, { color: style.color }]}>
-                            {KIND_LABEL[entry.kind]}
-                          </Text>
-                        </View>
-                      )}
-                      <Text
+                      <Animated.View
+                        entering={FadeInRight.duration(320)
+                          .delay(staggerDelay)
+                          .springify()
+                          .damping(18)}
                         style={[
-                          styles.logText,
-                          { color: style.color },
-                          entry.kind === 'turn' && { fontWeight: '900' },
+                          styles.logItem,
+                          {
+                            backgroundColor: style.bg,
+                            borderLeftColor: style.bar,
+                          },
                         ]}
                       >
-                        {entry.displayText}
-                      </Text>
+                        {entry.kind !== 'neutral' && (
+                          <View
+                            style={[
+                              styles.kindBadge,
+                              { borderColor: style.bar },
+                            ]}
+                          >
+                            <Text style={[styles.kindBadgeText, { color: style.color }]}>
+                              {KIND_LABEL[entry.kind]}
+                            </Text>
+                          </View>
+                        )}
+                        <Text
+                          style={[
+                            styles.logText,
+                            { color: style.color },
+                            entry.kind === 'turn' && { fontWeight: '900' },
+                          ]}
+                        >
+                          {entry.displayText}
+                        </Text>
+                      </Animated.View>
                     </Animated.View>
                   );
                 })}
@@ -340,6 +382,34 @@ const styles = StyleSheet.create({
     zIndex: 850,
     elevation: 12,
     ...Theme.shadows.soft,
+  },
+  // Ticker da última linha — aparece à esquerda do botão quando fechado.
+  ticker: {
+    position: 'absolute',
+    right: 64,
+    top: 14,
+    maxWidth: 220,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: Theme.radius.pill,
+    backgroundColor: 'rgba(11,15,20,0.72)',
+    borderWidth: 1,
+    zIndex: 849,
+    ...Theme.shadows.soft,
+  },
+  tickerBar: {
+    width: 3,
+    height: 14,
+    borderRadius: 2,
+  },
+  tickerText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    flex: 1,
   },
   buttonBlur: {
     flex: 1,

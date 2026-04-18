@@ -18,7 +18,6 @@ import {
   Settings,
   BookOpen,
   LogOut,
-  Swords,
   HelpCircle,
 } from 'lucide-react-native';
 import { useGameState } from '../../hooks/useGameState';
@@ -38,9 +37,8 @@ import ResolvedBanner from '../../components/game/ResolvedBanner';
 import InvalidActionToast from '../../components/game/InvalidActionToast';
 import DeckIndicator from '../../components/game/DeckIndicator';
 import ConsequenceHint from '../../components/game/ConsequenceHint';
-import HonestyBadge, {
-  ChallengeOddsBadge,
-} from '../../components/game/HonestyBadge';
+import ResponseCourtOverlay from '../../components/game/ResponseCourtOverlay';
+import SacrificeOverlay from '../../components/game/SacrificeOverlay';
 import EndOfMatchScreen from '../../components/game/EndOfMatchScreen';
 import { appendMatchHistory } from '../../utils/storage';
 import { Theme } from '../../constants/Theme';
@@ -73,7 +71,11 @@ export default function GameScreen() {
   const pendingBlock = useGameState((state) => state.pendingBlock);
   const currentPlayerId = useGameState((state) => state.currentPlayerId);
   const losingInfluenceId = useGameState((state) => state.losingInfluenceId);
+  const losingContext = useGameState((state) => (state as any).losingContext);
   const transitioning = useGameState((state) => state.transitioning);
+  const transitionRemaining = useGameState(
+    (state) => (state as any).transitionRemaining as number | null,
+  );
   const turnTimer = useGameState((state) => state.turnTimer);
   const lastReveal = useGameState((state) => state.lastReveal);
   const lastLoss = useGameState((state) => state.lastLoss);
@@ -499,6 +501,26 @@ export default function GameScreen() {
                 : turnTimer
             }
             transitioning={transitioning}
+            transitionRemaining={transitionRemaining}
+            nextPlayerName={
+              transitioning
+                ? players.find((p) => p.id === currentPlayerId)?.name || null
+                : null
+            }
+            intensity={(() => {
+              if (transitioning) return 'idle';
+              // Clímax: qualquer conflito ativo / decisão pesada em curso.
+              if (
+                phase === 'challenge' ||
+                phase === 'block' ||
+                phase === 'losing_influence'
+              ) {
+                return 'climax';
+              }
+              // Foco: seu turno de escolher ação.
+              if (isMyTurn && phase === 'action') return 'focus';
+              return 'idle';
+            })()}
             onPlayerLongPress={(p) => {
               hapticLight();
               setOpponentDetail(p);
@@ -506,11 +528,16 @@ export default function GameScreen() {
           />
 
           {/* HUD do jogador (cantos inferiores, não bloqueia mesa) */}
+          {/*
+            Quando o humano precisa sacrificar, o SacrificeOverlay assume
+            totalmente a interação — o HUD recebe isLosingInfluence=false
+            para evitar double-UI (hint + cartas destacáveis em dois lugares).
+          */}
           <PlayerHUD
             me={me}
             isItsTurn={isMyTurn}
             phase={phase}
-            isLosingInfluence={losingInfluenceId === myId}
+            isLosingInfluence={false}
             isTargeted={
               !!currentAction?.target &&
               currentAction.target === myId &&
@@ -539,6 +566,28 @@ export default function GameScreen() {
 
           {/* Reveal central de carta provada / blefe */}
           <RevealOverlay reveal={lastReveal} />
+
+          {/* Modal AAA de sacrif\u00edcio (perda de influ\u00eancia do humano) */}
+          {phase === 'losing_influence' &&
+            losingInfluenceId === myId &&
+            me && (
+              <SacrificeOverlay
+                cards={me.cards || []}
+                reason={(losingContext?.reason as any) || 'coup'}
+                causedByName={(() => {
+                  const cid = losingContext?.causedByPlayerId;
+                  if (!cid) return null;
+                  const p = players.find((pp) => pp.id === cid);
+                  return p?.name || null;
+                })()}
+                timer={turnTimer}
+                maxTimer={30}
+                onPick={(role) => {
+                  hapticHeavy();
+                  useGameState.getState().selectInfluence(role);
+                }}
+              />
+            )}
 
           {/* Reveal central de influ\u00eancia perdida */}
           <LossRevealOverlay loss={lastLoss} />
@@ -710,263 +759,70 @@ export default function GameScreen() {
             return Math.max(0, 3 - dead);
           };
 
-          // Título + narrativa do evento.
-          // A "role reivindicada" é implícita pelo tipo da ação.
+          // "role" em julgamento em cada modo.
+          //  - challenge_action: atacante diz ser X (X = carta da ação)
+          //  - challenge_block: bloqueador diz ter X (X = carta do bloqueio)
+          //  - block_foreign_aid: mostra Duque (quem pode bloquear)
+          //  - block_steal: atacante diz ser Capitão
+          //  - block_assassinate: atacante diz ser Assassino
           const ROLE_OF_ACTION: Record<string, string> = {
             tax: 'duke',
             assassinate: 'assassin',
             steal: 'captain',
             exchange: 'ambassador',
           };
-          const claimRole = ROLE_OF_ACTION[actionType || ''] || '';
-          const actionLabel = translateAction(actionType || '').toUpperCase();
-          const targetLabel = targetPlayer
-            ? targetPlayer.id === myId
-              ? 'VOCÊ'
-              : targetPlayer.name.toUpperCase()
-            : null;
-
-          let headerKind: 'challenge' | 'block' = 'challenge';
-          let headerLabel = 'DECISÃO DA CORTE';
-          let narrativeMain = '';
-          let narrativeHint = '';
-
-          if (mode === 'challenge_action') {
-            headerKind = 'challenge';
-            headerLabel = 'DESAFIAR REIVINDICAÇÃO?';
-            narrativeMain = `${actorName.toUpperCase()} diz ter ${translateRole(
-              claimRole || ''
-            ).toUpperCase()} para ${actionLabel}${
-              targetLabel ? ` · ALVO: ${targetLabel}` : ''
-            }.`;
-            narrativeHint =
-              'Se desafiar: quem mentiu perde 1 influência. Permitir = ação acontece.';
-          } else if (mode === 'challenge_block') {
-            headerKind = 'challenge';
-            headerLabel = 'DESAFIAR BLOQUEIO?';
-            const iAmActor = currentAction?.source === myId;
-            const actorRef = iAmActor ? 'SEU' : `DE ${actorName.toUpperCase()}`;
-            const targetSuffix = targetLabel
-              ? iAmActor
-                ? ` sobre ${targetLabel}`
-                : ` sobre ${targetLabel}`
+          const claimedRole =
+            mode === 'challenge_action'
+              ? ROLE_OF_ACTION[actionType || ''] || ''
+              : mode === 'challenge_block'
+              ? pendingBlock?.role || ''
+              : mode === 'block_foreign_aid'
+              ? 'duke'
+              : mode === 'block_steal'
+              ? 'captain'
+              : mode === 'block_assassinate'
+              ? 'assassin'
               : '';
-            narrativeMain = `${(blockerName || '??').toUpperCase()} declara ${translateRole(
-              pendingBlock?.role || ''
-            ).toUpperCase()} para BLOQUEAR o ${translateAction(
-              pendingBlock?.actionType || ''
-            ).toUpperCase()} ${actorRef}${targetSuffix}.`;
-            narrativeHint = iAmActor
-              ? 'Desafiar: se o bloqueio era blefe, o bloqueador perde 1 influência e SUA ação segue. Se era real, VOCÊ perde.'
-              : 'Desafiar: se o bloqueio era blefe, ele perde 1 influência e a ação segue. Se era real, VOCÊ perde.';
-          } else if (mode === 'block_foreign_aid') {
-            headerKind = 'block';
-            headerLabel = 'BLOQUEAR AJUDA EXTERNA?';
-            narrativeMain = `${actorName.toUpperCase()} quer +2 moedas com AJUDA EXTERNA.`;
-            narrativeHint =
-              'Apenas o DUQUE pode bloquear. Declarar ter Duque é arriscado: pode ser contestado.';
-          } else if (mode === 'block_steal') {
-            headerKind = 'block';
-            headerLabel = 'IMPEDIR O ROUBO?';
-            narrativeMain = `${actorName.toUpperCase()} tenta ROUBAR 2 moedas de VOCÊ.`;
-            narrativeHint =
-              'CAPITÃO ou EMBAIXADOR podem bloquear. Se contestado e não tiver, perde 1 influência.';
-          } else if (mode === 'block_assassinate') {
-            headerKind = 'block';
-            headerLabel = 'BLOQUEAR ASSASSINATO?';
-            narrativeMain = `${actorName.toUpperCase()} vai ASSASSINAR VOCÊ (−1 influência).`;
-            narrativeHint =
-              'Apenas a CONDESSA bloqueia. Se bloquear sem ter Condessa e for contestado, perde 2 influências (blefe + assassinato).';
-          }
 
-          const headerColor =
-            headerKind === 'challenge'
-              ? Theme.colors.imperialRed
-              : Theme.colors.info;
+          const remainingByRole: Record<string, number> = {
+            duke: remainingOf('duke'),
+            captain: remainingOf('captain'),
+            ambassador: remainingOf('ambassador'),
+            assassin: remainingOf('assassin'),
+            contessa: remainingOf('contessa'),
+          };
 
           return (
-            <View style={styles.overlay}>
-              <View
-                style={[
-                  styles.alertBox,
-                  {
-                    maxWidth: 620,
-                    borderColor: headerColor,
-                  },
-                ]}
-              >
-                {/* Timer + etiqueta do tipo */}
-                <View style={styles.responseHeaderRow}>
-                  <View
-                    style={[
-                      styles.responseKindPill,
-                      { borderColor: headerColor, backgroundColor: headerColor + '22' },
-                    ]}
-                  >
-                    <Text
-                      style={[styles.responseKindPillText, { color: headerColor }]}
-                    >
-                      {headerKind === 'challenge' ? 'FASE: DESAFIO' : 'FASE: BLOQUEIO'}
-                    </Text>
-                  </View>
-                  {turnTimer !== null && (
-                    <View
-                      style={[
-                        styles.responseTimerPill,
-                        turnTimer <= 10 && {
-                          borderColor: Theme.colors.imperialRed,
-                          backgroundColor: 'rgba(196, 50, 58, 0.15)',
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.responseTimerText,
-                          turnTimer <= 10 && { color: Theme.colors.imperialRed },
-                        ]}
-                      >
-                        {turnTimer}s
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                <Text style={[styles.alertTitle, { color: headerColor }]}>
-                  {headerLabel}
-                </Text>
-
-                <View style={styles.narrativeBox}>
-                  <Text style={styles.narrativeMain}>{narrativeMain}</Text>
-                  <Text style={styles.narrativeHint}>{narrativeHint}</Text>
-                </View>
-
-                <View style={styles.columnGap}>
-                  {canDesafiar && (() => {
-                    const roleUnderChallenge =
-                      mode === 'challenge_block'
-                        ? pendingBlock?.role || ''
-                        : claimRole || '';
-                    return (
-                      <View>
-                        <TouchableOpacity
-                          style={styles.challengeActionBtn}
-                          onPress={() => {
-                            hapticMedium();
-                            playSfx('challenge');
-                            sendResponse('challenge');
-                          }}
-                        >
-                          <Swords color="#FFF" size={14} />
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.buttonText}>
-                              {mode === 'challenge_block'
-                                ? 'DESAFIAR BLOQUEIO'
-                                : 'ACUSAR DE BLEFE'}
-                            </Text>
-                            <Text style={styles.buttonSubText}>
-                              Duvidar que é {translateRole(roleUnderChallenge).toLowerCase()}
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-                        {!!roleUnderChallenge && (
-                          <ChallengeOddsBadge
-                            role={roleUnderChallenge}
-                            remaining={remainingOf(roleUnderChallenge)}
-                            total={3}
-                          />
-                        )}
-                      </View>
-                    );
-                  })()}
-
-                  {canBloquear && mode === 'block_steal' && (
-                    <View>
-                      <View style={styles.dualBlockRow}>
-                        <TouchableOpacity
-                          style={[styles.blockActionBtn, { flex: 1 }]}
-                          onPress={() => {
-                            hapticMedium();
-                            playSfx('block');
-                            sendResponse('block', 'captain');
-                          }}
-                        >
-                          <Text style={styles.blockButtonText}>BLOQ. C/ CAPITÃO</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[
-                            styles.blockActionBtn,
-                            { flex: 1, backgroundColor: '#4E7AA0' },
-                          ]}
-                          onPress={() => {
-                            hapticMedium();
-                            playSfx('block');
-                            sendResponse('block', 'ambassador');
-                          }}
-                        >
-                          <Text style={styles.blockButtonText}>BLOQ. C/ EMBAIXADOR</Text>
-                        </TouchableOpacity>
-                      </View>
-                      <View style={styles.badgesRow}>
-                        <HonestyBadge role="captain" hasIt={iHave('captain')} />
-                        <HonestyBadge
-                          role="ambassador"
-                          hasIt={iHave('ambassador')}
-                        />
-                      </View>
-                    </View>
-                  )}
-
-                  {canBloquear && mode === 'block_foreign_aid' && (
-                    <View>
-                      <TouchableOpacity
-                        style={styles.blockActionBtn}
-                        onPress={() => {
-                          hapticMedium();
-                          playSfx('block');
-                          sendResponse('block', 'duke');
-                        }}
-                      >
-                        <Text style={styles.blockButtonText}>BLOQUEAR C/ DUQUE</Text>
-                      </TouchableOpacity>
-                      <HonestyBadge role="duke" hasIt={iHave('duke')} />
-                    </View>
-                  )}
-
-                  {canBloquear && mode === 'block_assassinate' && (
-                    <View>
-                      <TouchableOpacity
-                        style={styles.blockActionBtn}
-                        onPress={() => {
-                          hapticMedium();
-                          playSfx('block');
-                          sendResponse('block', 'contessa');
-                        }}
-                      >
-                        <Text style={styles.blockButtonText}>BLOQUEAR C/ CONDESSA</Text>
-                      </TouchableOpacity>
-                      <HonestyBadge role="contessa" hasIt={iHave('contessa')} />
-                    </View>
-                  )}
-
-                  <TouchableOpacity
-                    style={styles.passActionBtn}
-                    onPress={() => {
-                      hapticLight();
-                      sendResponse('pass');
-                    }}
-                  >
-                    <Text style={styles.secondaryButtonText}>
-                      {headerKind === 'challenge'
-                        ? 'CONFIAR E PERMITIR'
-                        : 'NÃO BLOQUEAR'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
+            <ResponseCourtOverlay
+              mode={mode}
+              actorName={actorName}
+              blockerName={blockerName}
+              targetName={targetPlayer?.name || null}
+              iAmActor={currentAction?.source === myId}
+              iAmTarget={iAmTarget}
+              claimedRole={claimedRole}
+              actionType={actionType || ''}
+              myAliveRoles={myAliveRoles}
+              remainingByRole={remainingByRole}
+              timer={turnTimer}
+              maxTimer={30}
+              onChallenge={() => {
+                hapticMedium();
+                playSfx('challenge');
+                sendResponse('challenge');
+              }}
+              onBlock={(role) => {
+                hapticMedium();
+                playSfx('block');
+                sendResponse('block', role);
+              }}
+              onPass={() => {
+                hapticLight();
+                sendResponse('pass');
+              }}
+            />
           );
         })()}
-
       {/* Ambassador Exchange */}
       {!transitioning &&
         phase === 'exchanging' &&
@@ -1377,8 +1233,8 @@ const styles = StyleSheet.create({
   },
   deckCorner: {
     position: 'absolute',
-    top: 10,
-    right: 12,
+    top: 62,
+    right: 14,
     alignItems: 'center',
     zIndex: 5,
   },
@@ -1529,6 +1385,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     width: '100%',
     marginBottom: 10,
+  },
+  timelineWrap: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 10,
+    marginBottom: 4,
   },
   responseKindPill: {
     paddingHorizontal: 10,

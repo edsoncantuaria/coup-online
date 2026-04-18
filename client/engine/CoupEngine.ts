@@ -555,14 +555,20 @@ export class CoupEngine {
         // Bloqueio legítimo: Ação original é abortada
         this.addLog(`🛡️ O bloqueio teve sucesso! A ação de ${this.getPlayerName(action.source)} foi impedida.`);
         this.state.currentAction = null; 
-        const waiting = this.loseInfluence(challengerId, 'next_turn');
+        const waiting = this.loseInfluence(challengerId, 'next_turn', {
+          reason: 'challenge_lost',
+          causedByPlayerId: targetPlayer.id,
+        });
         if (!waiting) this.nextTurn();
       } else {
         // Ação legítima: Desafiante perde carta.
         // Se a ação ainda pode ser bloqueada pelo alvo, abrimos a fase de bloqueio antes de resolver.
         const needsBlockPhase = !!action.target && this.isActionBlockable(action.type);
         const pendingType = needsBlockPhase ? 'allow_block' : 'resolve_action';
-        const waiting = this.loseInfluence(challengerId, pendingType);
+        const waiting = this.loseInfluence(challengerId, pendingType, {
+          reason: 'challenge_lost',
+          causedByPlayerId: targetPlayer.id,
+        });
         if (!waiting) {
           if (needsBlockPhase) {
             this.openBlockPhaseForTarget();
@@ -597,7 +603,10 @@ export class CoupEngine {
         const isForeignAid = action.type === 'foreign_aid';
         const resolutionType = isForeignAid ? 'reopen_block' : 'resolve_action';
         
-        const isWaiting = this.loseInfluence(targetId, resolutionType);
+        const isWaiting = this.loseInfluence(targetId, resolutionType, {
+          reason: 'bluff_caught',
+          causedByPlayerId: challengerId,
+        });
         if (!isWaiting && (this.state.phase as string) !== 'game_over') {
           if (isForeignAid) {
             this.addLog(`⚔️ O bloqueio de ${targetPlayer.name} falhou! Outros nobres ainda podem tentar bloquear.`);
@@ -612,7 +621,10 @@ export class CoupEngine {
         // Ação falsa: A ação é CANCELADA
         this.addLog(`❌ A ação de ${targetPlayer.name} falhou pois era um blefe.`);
         this.state.currentAction = null; 
-        const waiting = this.loseInfluence(targetId, 'next_turn');
+        const waiting = this.loseInfluence(targetId, 'next_turn', {
+          reason: 'bluff_caught',
+          causedByPlayerId: challengerId,
+        });
         if (!waiting) this.nextTurn();
       }
     }
@@ -690,7 +702,10 @@ export class CoupEngine {
             `${source.name} ordena assassinato contra ${tgt?.name || '??'}.`,
             action.target
           );
-          const pending = this.loseInfluence(action.target, 'next_turn');
+          const pending = this.loseInfluence(action.target, 'next_turn', {
+            reason: 'assassinate',
+            causedByPlayerId: source.id,
+          });
           if (!pending) this.nextTurn();
         } else {
           this.nextTurn();
@@ -705,7 +720,10 @@ export class CoupEngine {
             `${source.name} executa Golpe contra ${tgt?.name || '??'}.`,
             action.target
           );
-          const pending = this.loseInfluence(action.target, 'next_turn');
+          const pending = this.loseInfluence(action.target, 'next_turn', {
+            reason: 'coup',
+            causedByPlayerId: source.id,
+          });
           if (!pending) this.nextTurn();
         } else {
           this.nextTurn();
@@ -789,7 +807,11 @@ export class CoupEngine {
     }
   }
 
-  private loseInfluence(playerId: string, nextAction: 'next_turn' | 'resolve_action' | 'action_fail' | 'allow_block' | 'reopen_block' = 'next_turn'): boolean {
+  private loseInfluence(
+    playerId: string,
+    nextAction: 'next_turn' | 'resolve_action' | 'action_fail' | 'allow_block' | 'reopen_block' = 'next_turn',
+    context?: { reason: 'coup' | 'assassinate' | 'challenge_lost' | 'bluff_caught'; causedByPlayerId?: string },
+  ): boolean {
     const player = this.state.players.find(p => p.id === playerId);
     if (!player) return false;
 
@@ -814,6 +836,15 @@ export class CoupEngine {
       this.state.losingInfluenceId = playerId;
       this.state.waitingForResponseIndex = this.state.players.findIndex(p => p.id === playerId);
       this.state.pendingResolution = { type: nextAction };
+      if (context) {
+        this.state.losingContext = {
+          reason: context.reason,
+          causedByPlayerId: context.causedByPlayerId,
+          stamp: Date.now(),
+        };
+      } else {
+        this.state.losingContext = undefined;
+      }
       const reasonLog = nextAction === 'resolve_action' ? '(ação ainda prosseguirá após escolha)' : '';
       this.addLog(`🤔 ${player.name} deve escolher qual influência perder. ${reasonLog}`);
       return true;
@@ -845,6 +876,7 @@ export class CoupEngine {
       const resolution = this.state.pendingResolution?.type || 'next_turn';
       this.state.pendingResolution = undefined;
       this.state.losingInfluenceId = undefined;
+      this.state.losingContext = undefined;
       this.state.waitingForResponseIndex = null;
 
       this.checkWinner();

@@ -1,7 +1,13 @@
 import React from 'react';
 import { Pressable, Text, StyleSheet, View } from 'react-native';
 import { LucideIcon, ChevronRight } from 'lucide-react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+  interpolate,
+} from 'react-native-reanimated';
 import { Theme } from '../../constants/Theme';
 
 interface ActionButtonProps {
@@ -28,20 +34,33 @@ export default function ActionButton({
   disabled,
 }: ActionButtonProps) {
   const scale = useSharedValue(1);
+  const pressT = useSharedValue(0);
   const accentColor = variant === 'character' ? Theme.colors.bluff : Theme.colors.gold;
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
+    shadowColor: accentColor,
+    shadowOpacity: interpolate(pressT.value, [0, 1], [0, 0.55]),
+    shadowRadius: interpolate(pressT.value, [0, 1], [0, 14]),
+    shadowOffset: { width: 0, height: 0 },
+  }));
+  const iconBoxStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: interpolate(pressT.value, [0, 1], [1, 1.08]) },
+    ],
   }));
 
   return (
     <Animated.View style={animatedStyle}>
       <Pressable
         onPressIn={() => {
-          if (!disabled) scale.value = withSpring(0.97, { damping: 15, stiffness: 200 });
+          if (disabled) return;
+          scale.value = withSpring(0.96, { damping: 14, stiffness: 220 });
+          pressT.value = withTiming(1, { duration: 120 });
         }}
         onPressOut={() => {
-          scale.value = withSpring(1, { damping: 15, stiffness: 200 });
+          scale.value = withSpring(1, { damping: 12, stiffness: 180 });
+          pressT.value = withTiming(0, { duration: 240 });
         }}
         onPress={onPress}
         disabled={disabled}
@@ -56,7 +75,7 @@ export default function ActionButton({
           disabled && styles.disabled,
         ]}
       >
-        <View
+        <Animated.View
           style={[
             styles.iconBox,
             {
@@ -65,14 +84,15 @@ export default function ActionButton({
               borderColor:
                 variant === 'character' ? 'rgba(155, 123, 212, 0.3)' : Theme.colors.goldLine,
             },
+            iconBoxStyle,
           ]}
         >
           <Icon
             color={disabled ? Theme.colors.textMuted : accentColor}
-            size={18}
-            strokeWidth={1.8}
+            size={22}
+            strokeWidth={2}
           />
-        </View>
+        </Animated.View>
 
         <View style={styles.textBox}>
           <Text style={[styles.label, disabled && styles.disabledText]}>
@@ -116,21 +136,21 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
     borderRadius: Theme.radius.md,
     borderWidth: 1,
-    backgroundColor: 'rgba(22, 29, 39, 0.7)',
-    gap: 10,
-    marginBottom: 6,
+    backgroundColor: 'rgba(22, 29, 39, 0.72)',
+    gap: 12,
+    marginBottom: 8,
   },
   disabled: {
     opacity: 0.4,
   },
   iconBox: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -140,9 +160,9 @@ const styles = StyleSheet.create({
   },
   label: {
     color: Theme.colors.text,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '900',
-    letterSpacing: 1.2,
+    letterSpacing: 1.3,
   },
   description: {
     color: Theme.colors.textSecondary,

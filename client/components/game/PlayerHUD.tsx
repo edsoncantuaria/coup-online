@@ -1,15 +1,17 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Coins } from 'lucide-react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
   withTiming,
+  withSpring,
+  withSequence,
   Easing,
-  FadeIn,
   FadeOut,
   ZoomIn,
+  interpolateColor,
 } from 'react-native-reanimated';
 import Card from '../Card';
 import { Theme } from '../../constants/Theme';
@@ -25,6 +27,100 @@ interface PlayerHUDProps {
   onSelectInfluence: (role: string) => void;
 }
 
+// Botão pressionável animado por carta: scale down ao pressionar, spring de volta.
+// Adiciona glow dourado contínuo se for a vez do humano (cartas viram protagonistas).
+function HeroCard({
+  role,
+  isFlipped,
+  isFirst,
+  onlyOneAlive,
+  highlight,
+  disabled,
+  onPress,
+  slotKey,
+}: {
+  role: string;
+  isFlipped: boolean;
+  isFirst: boolean;
+  onlyOneAlive: boolean;
+  highlight: boolean;
+  disabled: boolean;
+  onPress: () => void;
+  slotKey: string;
+}) {
+  const press = useSharedValue(1);
+  const shine = useSharedValue(0);
+
+  useEffect(() => {
+    if (highlight && !isFlipped) {
+      shine.value = withRepeat(
+        withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.quad) }),
+        -1,
+        true,
+      );
+    } else {
+      shine.value = withTiming(0, { duration: 300 });
+    }
+  }, [highlight, isFlipped]);
+
+  const pressStyle = useAnimatedStyle(() => ({
+    transform: [
+      { rotate: onlyOneAlive ? '0deg' : isFirst ? '-3deg' : '3deg' },
+      { scale: press.value },
+      { translateY: highlight && !isFlipped ? -4 : 0 },
+    ],
+  }));
+
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: shine.value * 0.85,
+    shadowOpacity: 0.25 + shine.value * 0.55,
+    shadowRadius: 12 + shine.value * 10,
+  }));
+
+  return (
+    <Animated.View
+      key={slotKey}
+      entering={ZoomIn.duration(360)}
+      exiting={FadeOut.duration(200)}
+      style={[
+        styles.cardWrapper,
+        !isFirst && { marginLeft: onlyOneAlive ? 18 : 12 },
+        isFlipped && onlyOneAlive && styles.faintDeadCard,
+        pressStyle,
+      ]}
+    >
+      {/* Halo dourado contínuo quando for meu turno (cartas-heroínas) */}
+      {highlight && !isFlipped && (
+        <Animated.View style={[styles.cardHalo, glowStyle]} pointerEvents="none" />
+      )}
+      <Pressable
+        disabled={disabled}
+        onPressIn={() => {
+          if (!disabled) press.value = withSpring(0.95, { damping: 14, stiffness: 220 });
+        }}
+        onPressOut={() => {
+          press.value = withSpring(1, { damping: 14, stiffness: 220 });
+        }}
+        onPress={onPress}
+        hitSlop={8}
+        accessibilityLabel={
+          isFlipped
+            ? `Carta revelada: ${role}`
+            : 'Carta oculta'
+        }
+        accessibilityRole="button"
+      >
+        <Card
+          role={role}
+          isFlipped
+          isDead={isFlipped}
+          style={styles.customCard}
+        />
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 export default function PlayerHUD({
   me,
   isItsTurn,
@@ -36,6 +132,7 @@ export default function PlayerHUD({
 }: PlayerHUDProps) {
   const pulse = useSharedValue(0);
   const threatPulse = useSharedValue(0);
+  const coinPulse = useSharedValue(0);
   const choosing = phase === 'losing_influence' && isLosingInfluence;
 
   useEffect(() => {
@@ -43,7 +140,7 @@ export default function PlayerHUD({
       pulse.value = withRepeat(
         withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.quad) }),
         -1,
-        true
+        true,
       );
     } else {
       pulse.value = withTiming(0, { duration: 300 });
@@ -55,12 +152,23 @@ export default function PlayerHUD({
       threatPulse.value = withRepeat(
         withTiming(1, { duration: 700, easing: Easing.inOut(Easing.quad) }),
         -1,
-        true
+        true,
       );
     } else {
       threatPulse.value = withTiming(0, { duration: 250 });
     }
   }, [isTargeted]);
+
+  // Flash dourado no coinBox quando moedas mudam (vida nas moedas).
+  // Usa spring para simular "impacto físico": salto rápido, retorno orgânico.
+  useEffect(() => {
+    coinPulse.value = withSequence(
+      // Impacto: sobe com spring energético (overshoot leve).
+      withSpring(1, { damping: 9, stiffness: 260, mass: 0.6 }),
+      // Release: retorno suave e alongado (sensação de peso).
+      withTiming(0, { duration: 1100, easing: Easing.out(Easing.cubic) }),
+    );
+  }, [me?.coins]);
 
   const threatStyle = useAnimatedStyle(() => ({
     opacity: 0.75 + threatPulse.value * 0.25,
@@ -72,8 +180,18 @@ export default function PlayerHUD({
     shadowRadius: 6 + pulse.value * 12,
   }));
 
-  const chooseHintStyle = useAnimatedStyle(() => ({
-    opacity: 0.6 + pulse.value * 0.4,
+  const coinBoxStyle = useAnimatedStyle(() => ({
+    borderColor: interpolateColor(
+      coinPulse.value,
+      [0, 1],
+      [Theme.colors.goldLine, Theme.colors.goldHigh],
+    ),
+    shadowOpacity: coinPulse.value * 0.9,
+    shadowRadius: 4 + coinPulse.value * 14,
+  }));
+
+  const coinScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + coinPulse.value * 0.08 }],
   }));
 
   if (!me) return null;
@@ -89,18 +207,20 @@ export default function PlayerHUD({
             </Text>
           </Animated.View>
         )}
-        <View style={styles.coinBox}>
-          <Coins color={Theme.colors.gold} size={18} />
-          <Text style={styles.coinText}>{me.coins}</Text>
+        <Animated.View style={[styles.coinBox, coinBoxStyle]}>
+          <Animated.View style={coinScaleStyle}>
+            <Coins color={Theme.colors.gold} size={18} />
+          </Animated.View>
+          <Animated.Text style={[styles.coinText, coinScaleStyle]}>
+            {me.coins}
+          </Animated.Text>
           <Text style={styles.coinLabel}>MOEDAS</Text>
           <CoinDelta coins={me.coins} />
-        </View>
+        </Animated.View>
 
         {me.coins >= 10 && isItsTurn && (
           <View style={styles.coupForcedPill}>
-            <Text style={styles.coupForcedText}>
-              GOLPE OBRIGATÓRIO
-            </Text>
+            <Text style={styles.coupForcedText}>GOLPE OBRIGATÓRIO</Text>
           </View>
         )}
 
@@ -133,65 +253,29 @@ export default function PlayerHUD({
         </Animated.View>
       </View>
 
-      {/* Cartas canto inferior direito */}
+      {/* Cartas canto inferior direito — protagonistas */}
       <View style={styles.rightDock} pointerEvents="box-none">
-        {choosing && (
-          <Animated.Text style={[styles.chooseHint, chooseHintStyle]}>
-            TOQUE UMA CARTA PARA PERDER
-          </Animated.Text>
-        )}
         <View style={styles.handContainer} pointerEvents="box-none">
           {me.cards?.map((card: any, i: number) => {
             const disabled = !choosing || card.isFlipped;
             const isFirst = i === 0;
             const aliveCount = me.cards.filter(
-              (c: any) => !c.isFlipped
+              (c: any) => !c.isFlipped,
             ).length;
             const onlyOneAlive = aliveCount === 1;
-            // Key inclui role+isFlipped: quando o engine substitui a carta
-            // provada, a key muda, forçando remontagem + animação de entrada.
             const slotKey = `slot-${i}-${card.role}-${card.isFlipped ? 'x' : 'o'}`;
             return (
-              <Animated.View
+              <HeroCard
                 key={slotKey}
-                entering={ZoomIn.duration(360)}
-                exiting={FadeOut.duration(200)}
-                style={[
-                  styles.cardWrapper,
-                  isFirst
-                    ? { transform: [{ rotate: onlyOneAlive ? '0deg' : '-3deg' }] }
-                    : {
-                        transform: [{ rotate: onlyOneAlive ? '0deg' : '3deg' }],
-                        marginLeft: onlyOneAlive ? 16 : 10,
-                      },
-                  card.isFlipped && onlyOneAlive && styles.faintDeadCard,
-                ]}
-              >
-                <TouchableOpacity
-                  disabled={disabled}
-                  onPress={() => onSelectInfluence(card.role)}
-                  activeOpacity={0.75}
-                  hitSlop={8}
-                  accessibilityLabel={
-                    card.isFlipped
-                      ? `Carta revelada: ${card.role}`
-                      : choosing
-                      ? `Tocar para descartar a carta ${card.role}`
-                      : 'Carta oculta'
-                  }
-                  accessibilityRole="button"
-                >
-                  <Card
-                    role={card.role}
-                    isFlipped
-                    isDead={card.isFlipped}
-                    style={[
-                      styles.customCard,
-                      choosing && !card.isFlipped && styles.selectableCard,
-                    ]}
-                  />
-                </TouchableOpacity>
-              </Animated.View>
+                slotKey={slotKey}
+                role={card.role}
+                isFlipped={card.isFlipped}
+                isFirst={isFirst}
+                onlyOneAlive={onlyOneAlive}
+                highlight={isItsTurn && phase === 'action'}
+                disabled={disabled}
+                onPress={() => onSelectInfluence(card.role)}
+              />
             );
           })}
         </View>
@@ -228,6 +312,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(11,15,20,0.65)',
     borderWidth: 1,
     borderColor: Theme.colors.goldLine,
+    shadowColor: Theme.colors.gold,
+    shadowOffset: { width: 0, height: 0 },
   },
   coinText: {
     color: Theme.colors.gold,
@@ -239,6 +325,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 3,
   },
   coinLabel: {
+    // Dourado só no importante: aqui vira label neutro.
     color: Theme.colors.textMuted,
     fontSize: 8,
     fontWeight: '900',
@@ -284,12 +371,23 @@ const styles = StyleSheet.create({
     ...Theme.shadows.premium,
   },
   customCard: {
-    width: 90,
-    height: 128,
+    // Protagonistas: +24% em área (90×128 → 112×160)
+    width: 112,
+    height: 160,
   },
-  selectableCard: {
-    borderColor: Theme.colors.imperialRed,
-    borderWidth: 2.5,
+  cardHalo: {
+    position: 'absolute',
+    inset: -4,
+    top: -4,
+    left: -4,
+    right: -4,
+    bottom: -4,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: Theme.colors.gold,
+    backgroundColor: 'transparent',
+    shadowColor: Theme.colors.gold,
+    shadowOffset: { width: 0, height: 0 },
   },
   faintDeadCard: {
     opacity: 0.35,
@@ -334,18 +432,5 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '900',
     letterSpacing: 2,
-  },
-  chooseHint: {
-    color: Theme.colors.imperialRed,
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1.8,
-    marginBottom: 6,
-    backgroundColor: 'rgba(168,58,58,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(168,58,58,0.45)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: Theme.radius.sm,
   },
 });

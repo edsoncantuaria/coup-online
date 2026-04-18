@@ -5,7 +5,7 @@ import { BotManager } from '../engine/BotManager';
 import { pickBotName } from '../utils/botNames';
 
 // Janela global entre transições para dar "fôlego" visual
-export const TRANSITION_MS = 3000;
+export const TRANSITION_MS = 5000;
 // Tempo para o humano agir antes do bot assumir
 export const TURN_TIMEOUT_S = 30;
 
@@ -17,6 +17,11 @@ interface GameState {
   currentPlayerId: string | null;
   waitingForResponseIndex: number | null;
   losingInfluenceId: string | null;
+  losingContext: {
+    reason: 'coup' | 'assassinate' | 'challenge_lost' | 'bluff_caught';
+    causedByPlayerId?: string;
+    stamp: number;
+  } | null;
   socket: Socket | null;
   isOffline: boolean;
   localEngine: CoupEngine | null;
@@ -55,6 +60,8 @@ interface GameState {
 
   // Transições e timers
   transitioning: boolean;
+  /** Segundos restantes no delay de transição entre ações (feedback visual). */
+  transitionRemaining: number | null;
   turnTimer: number | null; // segundos restantes para o humano agir
 
   // Actions
@@ -83,6 +90,7 @@ interface GameState {
 
 // Timer handles fora do store para evitar serialização
 let transitionTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
+let transitionTickHandle: ReturnType<typeof setInterval> | null = null;
 let humanTickHandle: ReturnType<typeof setInterval> | null = null;
 
 export const useGameState = create<GameState>((set, get) => ({
@@ -93,6 +101,7 @@ export const useGameState = create<GameState>((set, get) => ({
   currentPlayerId: null,
   waitingForResponseIndex: null,
   losingInfluenceId: null,
+  losingContext: null,
   socket: null,
   isOffline: false,
   localEngine: null,
@@ -107,6 +116,7 @@ export const useGameState = create<GameState>((set, get) => ({
   winnerId: null,
 
   transitioning: false,
+  transitionRemaining: null,
   turnTimer: null,
 
   connect: (url: string) => {
@@ -122,6 +132,7 @@ export const useGameState = create<GameState>((set, get) => ({
         currentPlayerId: state.players[state.turnIndex]?.id,
         waitingForResponseIndex: state.waitingForResponseIndex || null,
         losingInfluenceId: state.losingInfluenceId || null,
+        losingContext: state.losingContext ? { ...state.losingContext } : null,
         currentAction: state.currentAction ? { ...state.currentAction } : null,
         pendingBlock: state.pendingBlock ? { ...state.pendingBlock } : null,
         isOffline: false,
@@ -144,6 +155,7 @@ export const useGameState = create<GameState>((set, get) => ({
       currentPlayerId: state.players[state.turnIndex]?.id,
       waitingForResponseIndex: state.waitingForResponseIndex,
       losingInfluenceId: null,
+      losingContext: null,
       currentAction: null,
       pendingBlock: null,
       lastReveal: null,
@@ -152,6 +164,7 @@ export const useGameState = create<GameState>((set, get) => ({
       matchStats: null,
       winnerId: null,
       transitioning: false,
+      transitionRemaining: null,
       turnTimer: null,
       logs: ['Modo Offline iniciado.'],
     });
@@ -178,6 +191,7 @@ export const useGameState = create<GameState>((set, get) => ({
       currentPlayerId: state.players[state.turnIndex]?.id,
       waitingForResponseIndex: state.waitingForResponseIndex,
       losingInfluenceId: null,
+      losingContext: null,
       currentAction: state.currentAction,
       pendingBlock: state.pendingBlock,
       lastReveal: state.lastReveal ?? null,
@@ -189,6 +203,7 @@ export const useGameState = create<GameState>((set, get) => ({
       matchStats: (state as any).matchStats ?? null,
       winnerId: (state as any).winnerId ?? null,
       transitioning: false,
+      transitionRemaining: null,
       turnTimer: null,
       logs: state.logs || ['Campanha iniciada.'],
     });
@@ -262,6 +277,10 @@ export const useGameState = create<GameState>((set, get) => ({
       clearTimeout(transitionTimeoutHandle);
       transitionTimeoutHandle = null;
     }
+    if (transitionTickHandle) {
+      clearInterval(transitionTickHandle);
+      transitionTickHandle = null;
+    }
 
     // Para o timer do humano (qualquer transição renova)
     get().clearHumanTimer();
@@ -273,6 +292,9 @@ export const useGameState = create<GameState>((set, get) => ({
       currentPlayerId: state.players[state.turnIndex]?.id,
       waitingForResponseIndex: state.waitingForResponseIndex,
       losingInfluenceId: (state as any).losingInfluenceId || null,
+      losingContext: (state as any).losingContext
+        ? { ...(state as any).losingContext }
+        : null,
       currentAction: state.currentAction ? { ...state.currentAction } : null,
       pendingBlock: state.pendingBlock ? { ...state.pendingBlock } : null,
       lastReveal: (state as any).lastReveal
@@ -295,12 +317,31 @@ export const useGameState = create<GameState>((set, get) => ({
         : null,
       winnerId: (state as any).winner || null,
       transitioning: true,
+      transitionRemaining: Math.ceil(cooldownMs / 1000),
       turnTimer: null,
     });
 
+    // Countdown visual (1x/s). Só UI — o timeout real abaixo é quem libera o input.
+    transitionTickHandle = setInterval(() => {
+      const cur = get().transitionRemaining;
+      if (cur === null || cur <= 1) {
+        if (transitionTickHandle) {
+          clearInterval(transitionTickHandle);
+          transitionTickHandle = null;
+        }
+        set({ transitionRemaining: cur === null ? null : 0 });
+        return;
+      }
+      set({ transitionRemaining: cur - 1 });
+    }, 1000);
+
     transitionTimeoutHandle = setTimeout(() => {
       transitionTimeoutHandle = null;
-      set({ transitioning: false });
+      if (transitionTickHandle) {
+        clearInterval(transitionTickHandle);
+        transitionTickHandle = null;
+      }
+      set({ transitioning: false, transitionRemaining: null });
       get().checkBotTurns();
       get().maybeStartHumanTimer();
     }, cooldownMs);

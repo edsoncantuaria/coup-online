@@ -123,7 +123,7 @@ export default function ActionPanel({
   return (
     <View style={styles.container}>
       <View style={styles.headerBox}>
-        <ScrollText color={Theme.colors.gold} size={14} />
+        <ScrollText color={Theme.colors.textSecondary} size={14} />
         <Text style={styles.header}>AÇÕES</Text>
       </View>
       <Text style={styles.subheader}>Escolha uma ação para seu turno.</Text>
@@ -184,13 +184,14 @@ export default function ActionPanel({
 
 const styles = StyleSheet.create({
   container: {
-    width: 200,
+    width: 220,
     alignSelf: 'stretch',
-    backgroundColor: 'rgba(11, 15, 20, 0.65)',
+    backgroundColor: 'rgba(11, 15, 20, 0.68)',
     borderRightWidth: 1,
-    borderRightColor: Theme.colors.goldLine,
-    paddingHorizontal: 10,
-    paddingTop: 10,
+    // Gold diet: borda lateral neutra, não mais dourada por padrão.
+    borderRightColor: Theme.colors.borderSoft,
+    paddingHorizontal: 12,
+    paddingTop: 12,
     paddingBottom: 0,
     overflow: 'hidden',
     zIndex: 20,
