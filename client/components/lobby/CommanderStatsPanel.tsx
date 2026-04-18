@@ -11,12 +11,14 @@ interface Props {
   aggregate: HistoryAggregate;
   recent: MatchHistoryEntry[];
   onOpenHistory: () => void;
+  compact?: boolean;
 }
 
 export default function CommanderStatsPanel({
   aggregate,
   recent,
   onOpenHistory,
+  compact = false,
 }: Props) {
   const hasData = aggregate.total > 0;
   const winPercent = Math.round(aggregate.winRate * 100);
@@ -26,6 +28,7 @@ export default function CommanderStatsPanel({
       onPress={hasData ? onOpenHistory : undefined}
       style={({ pressed }) => [
         styles.wrap,
+        compact && styles.wrapCompact,
         pressed && hasData && { opacity: 0.85 },
       ]}
       accessibilityLabel="Abrir histórico de partidas"
@@ -40,14 +43,16 @@ export default function CommanderStatsPanel({
       </View>
 
       {!hasData ? (
-        <Text style={styles.empty}>
+        <Text style={styles.empty} numberOfLines={compact ? 2 : 3}>
           Nenhuma batalha registrada ainda. Comece uma campanha para entrar para a história.
         </Text>
       ) : (
         <>
           <View style={styles.mainRow}>
             <View style={styles.wrColumn}>
-              <Text style={styles.wrValue}>{winPercent}%</Text>
+              <Text style={[styles.wrValue, compact && styles.wrValueCompact]}>
+                {winPercent}%
+              </Text>
               <Text style={styles.wrLabel}>TAXA DE VITÓRIA</Text>
               <Text style={styles.wrFraction}>
                 {aggregate.wins}V · {aggregate.losses}D · {aggregate.total} BATALHAS
@@ -71,36 +76,42 @@ export default function CommanderStatsPanel({
                 value={String(aggregate.bestWinStreak)}
                 label="MELHOR STREAK"
               />
-              <MiniStat
-                icon={<Target size={10} color={Theme.colors.bluff} />}
-                value={String(aggregate.totalBluffsCaught)}
-                label="BLEFES PEGOS"
-              />
-              <MiniStat
-                icon={<Swords size={10} color={Theme.colors.success} />}
-                value={String(aggregate.totalChallengesWon)}
-                label="DESAFIOS OK"
-              />
+              {!compact && (
+                <MiniStat
+                  icon={<Target size={10} color={Theme.colors.bluff} />}
+                  value={String(aggregate.totalBluffsCaught)}
+                  label="BLEFES PEGOS"
+                />
+              )}
+              {!compact && (
+                <MiniStat
+                  icon={<Swords size={10} color={Theme.colors.success} />}
+                  value={String(aggregate.totalChallengesWon)}
+                  label="DESAFIOS OK"
+                />
+              )}
             </View>
           </View>
 
           {/* Timeline das últimas partidas */}
-          <View style={styles.timeline}>
-            <Text style={styles.timelineLabel}>ÚLTIMAS {Math.min(recent.length, 10)}</Text>
-            <View style={styles.timelineRow}>
-              {recent.slice(0, 10).map((m) => (
-                <View
-                  key={m.id}
-                  style={[
-                    styles.dot,
-                    m.result === 'win' ? styles.dotWin : styles.dotLoss,
-                    m.mvp && styles.dotMvp,
-                  ]}
-                />
-              ))}
-              {recent.length === 0 && <Text style={styles.empty}>—</Text>}
+          {!compact && (
+            <View style={styles.timeline}>
+              <Text style={styles.timelineLabel}>ÚLTIMAS {Math.min(recent.length, 10)}</Text>
+              <View style={styles.timelineRow}>
+                {recent.slice(0, 10).map((m) => (
+                  <View
+                    key={m.id}
+                    style={[
+                      styles.dot,
+                      m.result === 'win' ? styles.dotWin : styles.dotLoss,
+                      m.mvp && styles.dotMvp,
+                    ]}
+                  />
+                ))}
+                {recent.length === 0 && <Text style={styles.empty}>—</Text>}
+              </View>
             </View>
-          </View>
+          )}
         </>
       )}
     </Pressable>
@@ -134,6 +145,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Theme.colors.goldLine,
     backgroundColor: 'rgba(11, 15, 20, 0.55)',
+  },
+  wrapCompact: {
+    marginTop: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
   },
   headerRow: {
     flexDirection: 'row',
@@ -175,6 +191,10 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: -1,
     lineHeight: 32,
+  },
+  wrValueCompact: {
+    fontSize: 22,
+    lineHeight: 24,
   },
   wrLabel: {
     color: Theme.colors.textSecondary,

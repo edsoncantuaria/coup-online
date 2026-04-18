@@ -489,13 +489,12 @@ export default function GameScreen() {
             statusKind={statusInfo.kind}
             targetId={currentAction?.target || null}
             turnTimer={
-              // quando o modal de resposta ou de perder influ\u00eancia
-              // tem seu pr\u00f3prio timer vis\u00edvel, evitamos duplicar
+              // Evita duplicar o timer: o overlay de resposta já tem o seu.
+              // Em losing_influence mantemos o timer central visível porque
+              // não há modal bloqueante — o jogador toca direto na carta.
               (phase === 'challenge' || phase === 'block') &&
               waitingForResponseIndex !== null &&
               players[waitingForResponseIndex]?.id === myId
-                ? null
-                : phase === 'losing_influence' && losingInfluenceId === myId
                 ? null
                 : turnTimer
             }
@@ -627,13 +626,15 @@ export default function GameScreen() {
         />
       )}
 
-      {/* Phase Responses Overlay */}
+      {/* Phase Responses Overlay.
+          A engine já pula corretamente os jogadores que não devem responder
+          (autor da ação em challenge_action, source em block_foreign_aid,
+          bloqueador em challenge_block). Confiamos em waitingForResponseIndex. */}
       {!transitioning &&
         (phase === 'challenge' || phase === 'block') &&
         waitingForResponseIndex !== null &&
         players[waitingForResponseIndex]?.id === myId &&
         currentAction &&
-        currentAction.source !== myId &&
         (() => {
           const actionType = currentAction?.type;
           const actorName =
@@ -743,15 +744,21 @@ export default function GameScreen() {
           } else if (mode === 'challenge_block') {
             headerKind = 'challenge';
             headerLabel = 'DESAFIAR BLOQUEIO?';
+            const iAmActor = currentAction?.source === myId;
+            const actorRef = iAmActor ? 'SEU' : `DE ${actorName.toUpperCase()}`;
+            const targetSuffix = targetLabel
+              ? iAmActor
+                ? ` sobre ${targetLabel}`
+                : ` sobre ${targetLabel}`
+              : '';
             narrativeMain = `${(blockerName || '??').toUpperCase()} declara ${translateRole(
               pendingBlock?.role || ''
             ).toUpperCase()} para BLOQUEAR o ${translateAction(
               pendingBlock?.actionType || ''
-            ).toUpperCase()} de ${actorName.toUpperCase()}${
-              targetLabel ? ` sobre ${targetLabel}` : ''
-            }.`;
-            narrativeHint =
-              'Desafiar: se o bloqueio era blefe, ele perde 1 influência e a ação segue. Se era real, VOCÊ perde.';
+            ).toUpperCase()} ${actorRef}${targetSuffix}.`;
+            narrativeHint = iAmActor
+              ? 'Desafiar: se o bloqueio era blefe, o bloqueador perde 1 influência e SUA ação segue. Se era real, VOCÊ perde.'
+              : 'Desafiar: se o bloqueio era blefe, ele perde 1 influência e a ação segue. Se era real, VOCÊ perde.';
           } else if (mode === 'block_foreign_aid') {
             headerKind = 'block';
             headerLabel = 'BLOQUEAR AJUDA EXTERNA?';

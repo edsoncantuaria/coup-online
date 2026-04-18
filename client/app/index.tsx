@@ -3,9 +3,9 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   Pressable,
+  useWindowDimensions,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -56,6 +56,16 @@ import { setMuted as setSoundMuted } from '../utils/sound';
 
 export default function LobbyScreen() {
   const insets = useSafeAreaInsets();
+  const { width: winW, height: winH } = useWindowDimensions();
+  // Altura útil (descontando safe area) — usada pra escalar tudo e caber sem scroll
+  const usableH = Math.max(280, winH - insets.top - insets.bottom);
+  const isCompact = usableH < 540;
+  const isSmall = usableH < 440;
+  const isTiny = usableH < 380;
+  const titleSize = isTiny ? 44 : isSmall ? 56 : isCompact ? 72 : 92;
+  const emblemSize = Math.min(420, Math.min(winW, winH) * 0.85);
+  const showFlavor = !isSmall;
+  const showTagline = !isTiny;
   const router = useRouter();
   const [name, setName] = useState('Nobre da Corte');
   const [room, setRoom] = useState('');
@@ -205,14 +215,42 @@ export default function LobbyScreen() {
 
       {/* Ornamental emblem rotating in bg */}
       <Animated.View
-        style={[styles.emblemBg, emblemStyle]}
+        style={[
+          styles.emblemBg,
+          {
+            width: emblemSize,
+            height: emblemSize,
+            marginLeft: -emblemSize / 2,
+            marginTop: -emblemSize / 2,
+          },
+          emblemStyle,
+        ]}
         pointerEvents="none"
       >
-        <View style={styles.emblemRing} />
-        <View style={[styles.emblemRing, styles.emblemRingInner]} />
+        <View
+          style={[
+            styles.emblemRing,
+            {
+              width: emblemSize * 0.9,
+              height: emblemSize * 0.9,
+              borderRadius: (emblemSize * 0.9) / 2,
+            },
+          ]}
+        />
+        <View
+          style={[
+            styles.emblemRing,
+            {
+              width: emblemSize * 0.66,
+              height: emblemSize * 0.66,
+              borderRadius: (emblemSize * 0.66) / 2,
+              borderColor: 'rgba(198, 161, 91, 0.05)',
+            },
+          ]}
+        />
         <Crown
           color="rgba(198, 161, 91, 0.08)"
-          size={220}
+          size={emblemSize * 0.52}
           strokeWidth={1}
         />
       </Animated.View>
@@ -228,7 +266,11 @@ export default function LobbyScreen() {
       <View
         style={[
           styles.layout,
-          { paddingTop: Math.max(insets.top, 8), paddingBottom: insets.bottom },
+          isCompact && styles.layoutCompact,
+          {
+            paddingTop: Math.max(insets.top, 8),
+            paddingBottom: Math.max(insets.bottom, 8),
+          },
         ]}
       >
         {/* COLUNA ESQUERDA — Hero */}
@@ -236,24 +278,44 @@ export default function LobbyScreen() {
           entering={SlideInLeft.duration(700).springify()}
           style={styles.heroCol}
         >
-          <View style={styles.heroBadge}>
+          <View
+            style={[styles.heroBadge, isCompact && styles.heroBadgeCompact]}
+          >
             <Sparkles color={Theme.colors.gold} size={11} />
             <Text style={styles.heroBadgeText}>THE ROYAL COURT</Text>
           </View>
 
-          <Animated.Text style={[styles.title, titleGlowStyle]}>
+          <Animated.Text
+            style={[
+              styles.title,
+              { fontSize: titleSize, lineHeight: titleSize },
+              titleGlowStyle,
+            ]}
+          >
             COUP
           </Animated.Text>
 
-          <View style={styles.titleUnderline} />
+          <View
+            style={[
+              styles.titleUnderline,
+              isCompact && styles.titleUnderlineCompact,
+            ]}
+          />
 
-          <Text style={styles.tagline}>
-            Blefe, intriga e honra na corte das máscaras.
-          </Text>
+          {showTagline && (
+            <Text
+              style={[styles.tagline, isCompact && styles.taglineCompact]}
+              numberOfLines={2}
+            >
+              Blefe, intriga e honra na corte das máscaras.
+            </Text>
+          )}
 
-          <Text style={styles.flavor}>
-            "A traição é a única moeda que nunca perde o valor."
-          </Text>
+          {showFlavor && (
+            <Text style={styles.flavor} numberOfLines={2}>
+              "A traição é a única moeda que nunca perde o valor."
+            </Text>
+          )}
 
           <View style={styles.heroFooterRow}>
             <Pressable
@@ -300,13 +362,14 @@ export default function LobbyScreen() {
             aggregate={aggregate}
             recent={history}
             onOpenHistory={() => setShowHistory(true)}
+            compact={isCompact}
           />
         </Animated.View>
 
         {/* COLUNA DIREITA — Ações */}
         <Animated.View
           entering={SlideInRight.duration(700).springify()}
-          style={styles.formCol}
+          style={[styles.formCol, isCompact && styles.formColCompact]}
         >
           {/* Nome */}
           <View style={styles.fieldBlock}>
@@ -448,27 +511,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: '50%',
     top: '50%',
-    width: 420,
-    height: 420,
-    marginLeft: -210,
-    marginTop: -210,
     alignItems: 'center',
     justifyContent: 'center',
     opacity: 0.4,
   },
   emblemRing: {
     position: 'absolute',
-    width: 380,
-    height: 380,
-    borderRadius: 190,
     borderWidth: 1,
     borderColor: 'rgba(198, 161, 91, 0.07)',
-  },
-  emblemRingInner: {
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    borderColor: 'rgba(198, 161, 91, 0.05)',
   },
   topTrim: {
     height: 2,
@@ -485,6 +535,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 12,
     gap: 20,
+    alignItems: 'center',
+  },
+  layoutCompact: {
+    paddingHorizontal: 18,
+    paddingVertical: 6,
+    gap: 14,
   },
 
   /* Hero (esquerda) */
@@ -506,6 +562,10 @@ const styles = StyleSheet.create({
     borderColor: Theme.colors.goldLine,
     marginBottom: 14,
   },
+  heroBadgeCompact: {
+    marginBottom: 8,
+    paddingVertical: 3,
+  },
   heroBadgeText: {
     color: Theme.colors.gold,
     fontSize: 9,
@@ -515,10 +575,8 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: Theme.fonts.serif,
     color: Theme.colors.gold,
-    fontSize: 92,
     fontWeight: '900',
     letterSpacing: -3,
-    lineHeight: 92,
     textShadowColor: 'rgba(198, 161, 91, 0.35)',
     textShadowOffset: { width: 0, height: 0 },
   },
@@ -529,6 +587,11 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 14,
   },
+  titleUnderlineCompact: {
+    marginTop: 4,
+    marginBottom: 8,
+    width: 70,
+  },
   tagline: {
     color: Theme.colors.text,
     fontSize: 15,
@@ -537,14 +600,18 @@ const styles = StyleSheet.create({
     maxWidth: 340,
     marginBottom: 10,
   },
+  taglineCompact: {
+    fontSize: 13,
+    marginBottom: 6,
+  },
   flavor: {
     color: Theme.colors.textMuted,
     fontSize: 11,
     fontStyle: 'italic',
     letterSpacing: 0.4,
     maxWidth: 340,
-    marginBottom: 18,
-    lineHeight: 16,
+    marginBottom: 14,
+    lineHeight: 15,
   },
   heroFooterRow: {
     flexDirection: 'row',
@@ -580,6 +647,9 @@ const styles = StyleSheet.create({
     borderRadius: Theme.radius.lg,
     backgroundColor: 'rgba(11, 15, 20, 0.6)',
     ...Theme.shadows.premium,
+  },
+  formColCompact: {
+    padding: 12,
   },
   fieldBlock: {
     marginBottom: 14,

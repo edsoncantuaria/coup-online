@@ -80,10 +80,13 @@ async function runSimulation(index: number) {
 }
 
 async function runBatch() {
-  console.log("🚀 Iniciando Bateria de Teste (100 Jogos)...");
-  
+  const arg = process.argv[2];
+  const totalArg = arg ? parseInt(arg, 10) : NaN;
+  const total = Number.isFinite(totalArg) && totalArg > 0 ? totalArg : 1000;
+  console.log(`🚀 Iniciando Bateria de Teste (${total} Jogos)...`);
+
   const stats = {
-    total: 100,
+    total,
     sucessos: 0,
     erros: 0,
     vencedores: {} as Record<string, number>,
