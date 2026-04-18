@@ -2,6 +2,8 @@ import { GameState, Player, Role, Action } from './types.js';
 
 export class CoupEngine {
   private state: GameState;
+  /** true após `startGame()` — antes disso é lobby. */
+  private gameStarted = false;
 
   constructor(roomId: string) {
     this.state = {
@@ -29,6 +31,7 @@ export class CoupEngine {
   }
 
   public startGame() {
+    this.gameStarted = true;
     this.state.deck = this.shuffleDeck(this.buildDeck());
     this.state.players.forEach(p => {
       const r1 = this.state.deck.pop();
@@ -42,6 +45,70 @@ export class CoupEngine {
     });
     this.state.phase = 'action';
     this.addLog(`Turno de ${this.getCurrentPlayer().name}`);
+  }
+
+  /**
+   * Remove jogador (desconexão / saída). Lobby: remove da lista.
+   * Partida: remove da mesa e ajusta turno; pode encerrar o jogo.
+   */
+  public disconnectPlayer(playerId: string): void {
+    const idx = this.state.players.findIndex(p => p.id === playerId);
+    if (idx === -1) return;
+
+    const removed = this.state.players[idx]!;
+    const label = removed.name;
+
+    if (!this.gameStarted) {
+      this.state.players.splice(idx, 1);
+      this.adjustTurnIndexAfterRemove(idx);
+      this.addLog(`${label} saiu da sala.`);
+      return;
+    }
+
+    this.state.players.splice(idx, 1);
+    this.adjustTurnIndexAfterRemove(idx);
+
+    if (this.state.phase === 'challenge' || this.state.phase === 'block') {
+      this.state.phase = 'action';
+      delete this.state.currentAction;
+      this.state.responses = {};
+    }
+
+    this.addLog(`${label} desconectou e foi removido da partida.`);
+
+    if (this.state.players.length === 0) {
+      this.state.phase = 'game_over';
+      delete this.state.winner;
+      this.addLog('Sala encerrada.');
+      return;
+    }
+
+    if (this.state.players.length === 1) {
+      this.state.phase = 'game_over';
+      this.state.winner = this.state.players[0]!.id;
+      this.addLog('Fim de jogo!');
+      return;
+    }
+
+    if (this.state.phase === 'game_over') return;
+
+    try {
+      this.addLog(`Turno de ${this.getCurrentPlayer().name}`);
+    } catch {
+      this.state.turnIndex = 0;
+    }
+  }
+
+  private adjustTurnIndexAfterRemove(removedIdx: number): void {
+    if (this.state.players.length === 0) return;
+    if (removedIdx < this.state.turnIndex) {
+      this.state.turnIndex--;
+    } else if (removedIdx === this.state.turnIndex) {
+      this.state.turnIndex = this.state.turnIndex % this.state.players.length;
+    }
+    if (this.state.turnIndex >= this.state.players.length) {
+      this.state.turnIndex = 0;
+    }
   }
 
   private buildDeck(): Role[] {
@@ -74,6 +141,10 @@ export class CoupEngine {
 
   public getState(): GameState {
     return this.state;
+  }
+
+  public isGameStarted(): boolean {
+    return this.gameStarted;
   }
 
   private addLog(message: string) {

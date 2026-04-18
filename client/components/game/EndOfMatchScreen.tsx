@@ -16,8 +16,12 @@ import {
   Home,
   RefreshCw,
   Sparkles,
+  Target,
+  Check,
+  X,
 } from 'lucide-react-native';
 import { Theme } from '../../constants/Theme';
+import type { CampaignOutro } from '../../campaign/recap';
 
 interface EndOfMatchProps {
   visible: boolean;
@@ -27,6 +31,8 @@ interface EndOfMatchProps {
   matchStats: any;
   onHome: () => void;
   onReplay: () => void;
+  /** Resumo da Ascensão na Corte (modo campanha offline) */
+  campaignOutro?: CampaignOutro | null;
 }
 
 interface RankedEntry {
@@ -82,6 +88,7 @@ export default function EndOfMatchScreen({
   matchStats,
   onHome,
   onReplay,
+  campaignOutro,
 }: EndOfMatchProps) {
   const ranked = useMemo<RankedEntry[]>(() => {
     if (!matchStats?.perPlayer) return [];
@@ -156,6 +163,51 @@ export default function EndOfMatchScreen({
                 : `O reino agora pertence a ${winnerName}.`}
             </Text>
           </View>
+
+          {campaignOutro && (
+            <View style={styles.campaignBlock}>
+              <View style={styles.campaignHeader}>
+                <Target size={14} color={Theme.colors.gold} />
+                <Text style={styles.campaignKicker}>ASCENSÃO NA CORTE</Text>
+              </View>
+              <Text style={styles.campaignFlavor}>{campaignOutro.flavor}</Text>
+              {campaignOutro.promoted && (
+                <Text style={styles.campaignPromo}>
+                  ✦ Novo posto na corte desbloqueado
+                </Text>
+              )}
+              <Text style={styles.campaignRankLine}>
+                Posto atual:{' '}
+                <Text style={styles.campaignRankName}>
+                  {campaignOutro.rankTitle.toUpperCase()}
+                </Text>
+                {campaignOutro.nextRankTitle ? (
+                  <Text style={styles.campaignNext}>
+                    {' '}
+                    · Próximo: {campaignOutro.nextRankTitle}
+                  </Text>
+                ) : null}
+              </Text>
+              <Text style={styles.challengeTitle}>Desafios da mesa</Text>
+              {campaignOutro.challenges.map((c) => (
+                <View key={c.id} style={styles.challengeRow}>
+                  {c.ok ? (
+                    <Check size={14} color={Theme.colors.success} />
+                  ) : (
+                    <X size={14} color={Theme.colors.textMuted} />
+                  )}
+                  <Text
+                    style={[
+                      styles.challengeText,
+                      !c.ok && styles.challengeTextMuted,
+                    ]}
+                  >
+                    {c.title}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           {/* Resumo da partida */}
           <View style={styles.summaryRow}>
@@ -251,7 +303,7 @@ export default function EndOfMatchScreen({
           >
             <RefreshCw size={16} color="#0B0F14" />
             <Text style={[styles.footerBtnText, { color: '#0B0F14' }]}>
-              NOVA BATALHA
+              {campaignOutro ? 'VOLTAR À CORTE' : 'NOVA BATALHA'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -350,6 +402,72 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
+  },
+  campaignBlock: {
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: Theme.radius.md,
+    borderWidth: 1,
+    borderColor: Theme.colors.goldLine,
+    backgroundColor: 'rgba(198, 161, 91, 0.06)',
+    gap: 6,
+  },
+  campaignHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  campaignKicker: {
+    color: Theme.colors.gold,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  campaignFlavor: {
+    color: Theme.colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    fontStyle: 'italic',
+  },
+  campaignPromo: {
+    color: Theme.colors.success,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  campaignRankLine: {
+    color: Theme.colors.textMuted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  campaignRankName: {
+    color: Theme.colors.text,
+    fontWeight: '900',
+  },
+  campaignNext: {
+    color: Theme.colors.textMuted,
+    fontWeight: '600',
+  },
+  challengeTitle: {
+    color: Theme.colors.gold,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 2,
+    marginTop: 6,
+  },
+  challengeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 3,
+  },
+  challengeText: {
+    color: Theme.colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  challengeTextMuted: {
+    color: Theme.colors.textMuted,
   },
   summaryRow: {
     flexDirection: 'row',

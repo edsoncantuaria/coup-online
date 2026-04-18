@@ -5,6 +5,8 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  AppState,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -42,7 +44,17 @@ import ConsequenceHint from '../../components/game/ConsequenceHint';
 import ResponseCourtOverlay from '../../components/game/ResponseCourtOverlay';
 import SacrificeOverlay from '../../components/game/SacrificeOverlay';
 import EndOfMatchScreen from '../../components/game/EndOfMatchScreen';
-import { appendMatchHistory } from '../../utils/storage';
+import {
+  appendMatchHistory,
+  clearResumeSnapshot,
+  getCampaignProgress,
+  setCampaignProgress,
+} from '../../utils/storage';
+import { resolveCampaignRecap } from '../../campaign/recap';
+import type { CampaignOutro } from '../../campaign/recap';
+import type { PlayerStats } from '../../engine/types';
+import { CHALLENGE_DEFS } from '../../campaign/challenges';
+import type { ChallengeId } from '../../campaign/types';
 import { Theme } from '../../constants/Theme';
 import {
   hapticLight,
@@ -68,6 +80,8 @@ export default function GameScreen() {
 
   const players = useGameState((state) => state.players);
   const roomId = useGameState((state) => state.roomId);
+  const roomMeta = useGameState((state) => state.roomMeta);
+  const onlineLeaveMessage = useGameState((state) => state.onlineLeaveMessage);
   const phase = useGameState((state) => state.phase);
   const logs = useGameState((state) => state.logs);
   const socket = useGameState((state) => state.socket);
@@ -101,8 +115,22 @@ export default function GameScreen() {
     }
   }, [lastInvalid?.stamp]);
 
+  React.useEffect(() => {
+    if (!onlineLeaveMessage) return;
+    Alert.alert('Conexão', onlineLeaveMessage, [
+      {
+        text: 'OK',
+        onPress: () => {
+          useGameState.getState().disconnectOnline();
+          router.replace('/');
+        },
+      },
+    ]);
+  }, [onlineLeaveMessage, router]);
+
   const matchStats = useGameState((state) => state.matchStats);
   const winnerId = useGameState((state) => state.winnerId);
+  const campaignRun = useGameState((state) => state.campaignRun);
 
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [showTargetPicker, setShowTargetPicker] = useState(false);
@@ -130,6 +158,9 @@ export default function GameScreen() {
   });
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [campaignOutro, setCampaignOutro] = useState<CampaignOutro | null>(
+    null
+  );
 
   // Fecha modais locais (confirmação de ação, aviso de 10 moedas, target picker)
   // sempre que a fase deixar de ser 'action' OU o turno sair de mim. Evita
@@ -162,6 +193,16 @@ export default function GameScreen() {
       // Cancela timer de ação do humano ao sair
       useGameState.getState().clearHumanTimer();
     };
+  }, []);
+
+  // Persiste estado offline ao ir para segundo plano / multitarefa
+  React.useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'background' || next === 'inactive') {
+        useGameState.getState().persistOfflineSnapshot();
+      }
+    });
+    return () => sub.remove();
   }, []);
 
   const myId = isOffline ? 'human-1' : socket?.id;
@@ -216,7 +257,28 @@ export default function GameScreen() {
 
   React.useEffect(() => {
     if (phase === 'game_over' && prevPhaseRef.current !== 'game_over') {
+      void clearResumeSnapshot();
       const iWin = me && !me.cards.every((c: any) => c.isFlipped);
+      const run = useGameState.getState().campaignRun;
+      if (run && matchStats && me && myId) {
+        setCampaignOutro(null);
+        void (async () => {
+          const progressBefore = await getCampaignProgress();
+          const s = matchStats.perPlayer?.[myId] as PlayerStats | undefined;
+          const { newProgress, outro } = resolveCampaignRecap(
+            !!iWin,
+            s,
+            run.tally,
+            run,
+            progressBefore
+          );
+          await setCampaignProgress(newProgress);
+          useGameState.getState().clearCampaignRun();
+          setCampaignOutro(outro);
+        })();
+      } else {
+        setCampaignOutro(null);
+      }
       // Fim da partida: abaixa a música de fundo pra o stinger
       // respirar (vitória/derrota são o pico emocional do jogo).
       duckMusic(0.22, 4200);
@@ -470,6 +532,11 @@ export default function GameScreen() {
           <Text style={styles.topRoomCode}>
             #{String(roomId || paramRoomId || '----').toUpperCase()}
           </Text>
+          {roomMeta?.displayName ? (
+            <Text style={styles.topRoomName} numberOfLines={1}>
+              {roomMeta.displayName}
+            </Text>
+          ) : null}
           <View style={styles.topDivider} />
           <Text style={styles.topRoomLabel}>
             <Text style={styles.topRoomValue}>{alivePlayers}</Text>/
@@ -527,6 +594,25 @@ export default function GameScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {campaignRun && phase !== 'game_over' && (
+        <View style={styles.campaignStrip}>
+          <Text style={styles.campaignStripKicker}>ASCENSÃO</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.campaignChipsRow}
+          >
+            {campaignRun.challengeIds.map((id) => (
+              <View key={id} style={styles.campaignChip}>
+                <Text style={styles.campaignChipText}>
+                  {CHALLENGE_DEFS[id as ChallengeId].title}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       {/* LAYOUT PRINCIPAL: 3 colunas */}
       <View
@@ -755,7 +841,11 @@ export default function GameScreen() {
                     borderColor: Theme.colors.imperialRed,
                   },
                 ]}
-                onPress={() => router.replace('/')}
+                onPress={() => {
+                  void clearResumeSnapshot();
+                  useGameState.getState().clearCampaignRun();
+                  router.replace('/');
+                }}
               >
                 <Text style={styles.buttonText}>SAIR DE VERDADE</Text>
               </TouchableOpacity>
@@ -782,6 +872,7 @@ export default function GameScreen() {
             // reinicia: volta ao menu (player pode criar nova partida)
             router.replace('/');
           }}
+          campaignOutro={campaignOutro}
         />
       )}
 
@@ -1229,6 +1320,44 @@ export default function GameScreen() {
 const styles = StyleSheet.create({
   gameContainer: { flex: 1, backgroundColor: Theme.colors.background },
 
+  campaignStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.colors.goldLine,
+    backgroundColor: 'rgba(198, 161, 91, 0.06)',
+    zIndex: 35,
+  },
+  campaignStripKicker: {
+    color: Theme.colors.gold,
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  campaignChipsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingRight: 8,
+  },
+  campaignChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    backgroundColor: Theme.colors.surfaceHigh,
+  },
+  campaignChipText: {
+    color: Theme.colors.textSecondary,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+
   /** Cobre a tela inteira; não pode ficar dentro de arenaContainer (overflow:hidden). */
   sacrificeLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -1308,6 +1437,14 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 2,
+  },
+  topRoomName: {
+    color: Theme.colors.textMuted,
+    fontSize: 8,
+    fontWeight: '700',
+    maxWidth: 160,
+    textAlign: 'center',
+    marginTop: 2,
   },
   topRoomValue: {
     color: Theme.colors.text,

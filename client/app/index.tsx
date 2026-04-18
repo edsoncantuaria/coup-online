@@ -21,17 +21,17 @@ import Animated, {
   SlideInRight,
 } from 'react-native-reanimated';
 import {
-  Users,
   Crown,
   Swords,
   ChevronRight,
   BookOpen,
   Shield,
   Sparkles,
-  DoorOpen,
   Volume2,
   VolumeX,
   Trophy,
+  RotateCcw,
+  Wifi,
 } from 'lucide-react-native';
 import { useGameState } from '../hooks/useGameState';
 import CourtAlert from '../components/CourtAlert';
@@ -39,6 +39,9 @@ import RulesView from '../components/RulesView';
 import CommanderStatsPanel from '../components/lobby/CommanderStatsPanel';
 import MatchHistoryModal from '../components/lobby/MatchHistoryModal';
 import DifficultyModal from '../components/lobby/DifficultyModal';
+import OnboardingModal from '../components/lobby/OnboardingModal';
+import CampaignModal from '../components/lobby/CampaignModal';
+import MultiplayerModal from '../components/lobby/MultiplayerModal';
 import { Theme } from '../constants/Theme';
 import {
   storage,
@@ -47,6 +50,11 @@ import {
   aggregateHistory,
   getDifficulty,
   setDifficulty,
+  loadResumeSnapshot,
+  clearResumeSnapshot,
+  getOnboardingSeen,
+  setOnboardingSeen,
+  isOfflineResumeSnapshot,
   type MatchHistoryEntry,
   type HistoryAggregate,
   type BotPersonality,
@@ -68,7 +76,6 @@ export default function LobbyScreen() {
   const showTagline = !isTiny;
   const router = useRouter();
   const [name, setName] = useState('Nobre da Corte');
-  const [room, setRoom] = useState('');
   const [showRules, setShowRules] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -81,7 +88,15 @@ export default function LobbyScreen() {
     bots: 3,
     personalities: ['balanced', 'balanced', 'balanced'],
   });
-  const { joinRoom, startOfflineCampaign } = useGameState();
+  const {
+    startOfflineCampaign,
+    restoreOfflineResume,
+    startCampaignAscensionMatch,
+  } = useGameState();
+  const [resumeAvailable, setResumeAvailable] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showCampaign, setShowCampaign] = useState(false);
+  const [showMultiplayer, setShowMultiplayer] = useState(false);
 
   const reloadHistory = React.useCallback(async () => {
     const list = await getMatchHistory();
@@ -96,10 +111,21 @@ export default function LobbyScreen() {
     React.useCallback(() => {
       reloadHistory();
       playMusic('menu');
+      (async () => {
+        const raw = await loadResumeSnapshot();
+        if (raw && !isOfflineResumeSnapshot(raw)) {
+          await clearResumeSnapshot();
+        }
+        const ok =
+          raw &&
+          isOfflineResumeSnapshot(raw) &&
+          raw.engineState.phase !== 'game_over';
+        setResumeAvailable(!!ok);
+      })();
     }, [reloadHistory])
   );
 
-  // Carrega preferências persistidas
+  // Carrega preferências persistidas + onboarding na primeira abertura
   useEffect(() => {
     (async () => {
       const saved = await storage.getPlayerName();
@@ -109,6 +135,8 @@ export default function LobbyScreen() {
       setSoundMuted(m);
       const diff = await getDifficulty();
       if (diff) setDifficultyState(diff);
+      const seen = await getOnboardingSeen();
+      if (!seen) setShowOnboarding(true);
     })();
   }, []);
 
@@ -158,36 +186,35 @@ export default function LobbyScreen() {
     transform: [{ rotate: `${emblemRotate.value * 360}deg` }],
   }));
 
-  const handleCreate = () => {
-    if (!name.trim()) {
-      setAlertConfig({
-        visible: true,
-        title: 'O Código de Honra',
-        message: 'Grave o seu nome antes de reunir um conselho.',
-      });
-      return;
-    }
-    const newRoom = Math.random().toString(36).substring(7).toUpperCase();
-    joinRoom(newRoom, name);
-    router.push(`/game/${newRoom}`);
-  };
-
-  const handleJoin = () => {
-    if (!name.trim() || !room.trim()) {
-      setAlertConfig({
-        visible: true,
-        title: 'Portões Fechados',
-        message:
-          'Você deve apresentar um Nome e o Selo Real (Código) para entrar.',
-      });
-      return;
-    }
-    joinRoom(room, name);
-    router.push(`/game/${room}`);
-  };
-
   const handleOffline = () => {
     setShowDifficulty(true);
+  };
+
+  const handleResumeOffline = async () => {
+    const ok = await restoreOfflineResume();
+    if (ok) {
+      setResumeAvailable(false);
+      router.push('/game/OFFLINE');
+    } else {
+      setAlertConfig({
+        visible: true,
+        title: 'Nada para retomar',
+        message:
+          'Não encontramos uma partida salva válida. Inicie uma nova campanha.',
+      });
+    }
+  };
+
+  const dismissOnboarding = () => {
+    setShowOnboarding(false);
+    void setOnboardingSeen();
+  };
+
+  const handleAscensionStart = async () => {
+    const n = name.trim() || 'Nobre Solitário';
+    await startCampaignAscensionMatch(n);
+    setShowCampaign(false);
+    router.push('/game/OFFLINE');
   };
 
   const handleStartCampaign = async (cfg: {
@@ -273,6 +300,8 @@ export default function LobbyScreen() {
           {
             paddingTop: Math.max(insets.top, 8),
             paddingBottom: Math.max(insets.bottom, 8),
+            paddingLeft: (isCompact ? 18 : 24) + Math.max(insets.left, 0),
+            paddingRight: (isCompact ? 18 : 24) + Math.max(insets.right, 0),
           },
         ]}
       >
@@ -392,7 +421,57 @@ export default function LobbyScreen() {
             </View>
           </View>
 
-          {/* Botão principal — OFFLINE */}
+          {resumeAvailable && (
+            <Pressable
+              onPress={handleResumeOffline}
+              style={({ pressed }) => [
+                styles.resumeBtnWrap,
+                pressed && { opacity: 0.88 },
+              ]}
+            >
+              <View style={styles.resumeBtn}>
+                <RotateCcw color={Theme.colors.gold} size={16} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.resumeBtnTitle}>RETOMAR PARTIDA</Text>
+                  <Text style={styles.resumeBtnSub}>
+                    Campanha offline interrompida — continuar de onde parou
+                  </Text>
+                </View>
+                <ChevronRight color={Theme.colors.gold} size={18} />
+              </View>
+            </Pressable>
+          )}
+
+          <Pressable
+            onPress={() => {
+              if (!name.trim()) {
+                setAlertConfig({
+                  visible: true,
+                  title: 'O Código de Honra',
+                  message: 'Grave o seu nome antes de subir na corte.',
+                });
+                return;
+              }
+              setShowCampaign(true);
+            }}
+            style={({ pressed }) => [
+              styles.ascensionBtnWrap,
+              pressed && { opacity: 0.9 },
+            ]}
+          >
+            <View style={styles.ascensionBtn}>
+              <Sparkles color={Theme.colors.gold} size={17} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.ascensionBtnTitle}>ASCENSÃO NA CORTE</Text>
+                <Text style={styles.ascensionBtnSub}>
+                  Progressão, rivais e desafios por partida
+                </Text>
+              </View>
+              <ChevronRight color={Theme.colors.gold} size={18} />
+            </View>
+          </Pressable>
+
+          {/* Botão principal — OFFLINE livre */}
           <Pressable
             onPress={handleOffline}
             style={({ pressed }) => [
@@ -410,58 +489,42 @@ export default function LobbyScreen() {
                 <Swords color="#1A1306" size={18} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.primaryBtnTitle}>INICIAR CAMPANHA</Text>
+                <Text style={styles.primaryBtnTitle}>PARTIDA RÁPIDA</Text>
                 <Text style={styles.primaryBtnSub}>
-                  Modo Solitário · Enfrente a IA da Corte
+                  Contra bots · escolha dificuldade e personalidades
                 </Text>
               </View>
               <ChevronRight color="#1A1306" size={20} />
             </LinearGradient>
           </Pressable>
 
-          {/* Divisor */}
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OU ENCONTRO DE NOBRES</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Online actions row */}
-          <View style={styles.onlineRow}>
-            <View style={[styles.inputWrapper, { flex: 1 }]}>
-              <TextInput
-                style={[styles.input, styles.codeInput]}
-                value={room}
-                onChangeText={(t) => setRoom(t.toUpperCase())}
-                placeholder="CÓD. SALA"
-                placeholderTextColor={Theme.colors.textMuted}
-                autoCapitalize="characters"
-                maxLength={8}
-              />
-            </View>
-
-            <Pressable
-              onPress={handleJoin}
-              style={({ pressed }) => [
-                styles.joinBtn,
-                pressed && { opacity: 0.85 },
-              ]}
-            >
-              <DoorOpen color={Theme.colors.text} size={14} />
-              <Text style={styles.joinBtnText}>INVASÃO</Text>
-            </Pressable>
-          </View>
-
           <Pressable
-            onPress={handleCreate}
+            onPress={() => {
+              if (!name.trim()) {
+                setAlertConfig({
+                  visible: true,
+                  title: 'O Código de Honra',
+                  message: 'Grave o seu nome antes de jogar em rede.',
+                });
+                return;
+              }
+              setShowMultiplayer(true);
+            }}
             style={({ pressed }) => [
-              styles.createBtn,
-              pressed && { opacity: 0.85 },
+              styles.multiplayerBtnWrap,
+              pressed && { opacity: 0.9 },
             ]}
           >
-            <Users color={Theme.colors.gold} size={14} />
-            <Text style={styles.createBtnText}>REUNIR O CONSELHO</Text>
-            <ChevronRight color={Theme.colors.gold} size={16} />
+            <View style={styles.multiplayerBtn}>
+              <Wifi color={Theme.colors.info} size={17} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.multiplayerBtnTitle}>MULTIJOGADOR</Text>
+                <Text style={styles.multiplayerBtnSub}>
+                  Jogue com amigos — mesma rede ou online
+                </Text>
+              </View>
+              <ChevronRight color={Theme.colors.info} size={18} />
+            </View>
           </Pressable>
         </Animated.View>
       </View>
@@ -501,6 +564,29 @@ export default function LobbyScreen() {
         onClose={() => setShowDifficulty(false)}
         onStart={handleStartCampaign}
       />
+
+      <OnboardingModal
+        visible={showOnboarding}
+        onComplete={dismissOnboarding}
+        onDismiss={dismissOnboarding}
+      />
+
+      <CampaignModal
+        visible={showCampaign}
+        playerName={name.trim()}
+        onClose={() => setShowCampaign(false)}
+        onStartAscension={handleAscensionStart}
+      />
+
+      <MultiplayerModal
+        visible={showMultiplayer}
+        playerName={name.trim()}
+        onClose={() => setShowMultiplayer(false)}
+        onEnterGame={(roomId) => {
+          setShowMultiplayer(false);
+          router.push(`/game/${roomId}`);
+        }}
+      />
     </View>
   );
 }
@@ -535,13 +621,11 @@ const styles = StyleSheet.create({
   layout: {
     flex: 1,
     flexDirection: 'row',
-    paddingHorizontal: 24,
     paddingVertical: 12,
     gap: 20,
     alignItems: 'center',
   },
   layoutCompact: {
-    paddingHorizontal: 18,
     paddingVertical: 6,
     gap: 14,
   },
@@ -687,6 +771,93 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 3,
     fontSize: 14,
+  },
+
+  resumeBtnWrap: {
+    marginBottom: 10,
+    borderRadius: Theme.radius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Theme.colors.goldLine,
+    backgroundColor: 'rgba(198,161,91,0.06)',
+  },
+  resumeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  resumeBtnTitle: {
+    color: Theme.colors.gold,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+  },
+  resumeBtnSub: {
+    color: Theme.colors.textMuted,
+    fontSize: 9.5,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+    marginTop: 2,
+  },
+
+  ascensionBtnWrap: {
+    marginBottom: 10,
+    borderRadius: Theme.radius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(198, 161, 91, 0.35)',
+    backgroundColor: 'rgba(22, 29, 39, 0.95)',
+  },
+  ascensionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  ascensionBtnTitle: {
+    color: Theme.colors.gold,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.3,
+  },
+  ascensionBtnSub: {
+    color: Theme.colors.textMuted,
+    fontSize: 9.5,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+    marginTop: 2,
+  },
+
+  multiplayerBtnWrap: {
+    marginBottom: 14,
+    borderRadius: Theme.radius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(110, 163, 216, 0.35)',
+    backgroundColor: 'rgba(15, 21, 32, 0.98)',
+  },
+  multiplayerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  multiplayerBtnTitle: {
+    color: Theme.colors.info,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.3,
+  },
+  multiplayerBtnSub: {
+    color: Theme.colors.textMuted,
+    fontSize: 9.5,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+    marginTop: 2,
   },
 
   /* Primary button */

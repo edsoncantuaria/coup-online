@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   X,
   Shield,
@@ -111,6 +112,8 @@ export default function DifficultyModal({
     setPersonalities(ensureSize(personalities, next));
   };
 
+  const insets = useSafeAreaInsets();
+
   const handleStart = () => {
     onStart({
       bots,
@@ -126,7 +129,17 @@ export default function DifficultyModal({
       onRequestClose={onClose}
       supportedOrientations={['landscape']}
     >
-      <View style={styles.backdrop}>
+      <View
+        style={[
+          styles.backdrop,
+          {
+            paddingTop: 14 + insets.top,
+            paddingBottom: 14 + insets.bottom,
+            paddingLeft: 14 + insets.left,
+            paddingRight: 14 + insets.right,
+          },
+        ]}
+      >
         <View style={styles.card}>
           <View style={styles.header}>
             <View style={styles.headerTitleRow}>
@@ -261,7 +274,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(5,7,10,0.88)',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 14,
   },
   card: {
     width: '100%',

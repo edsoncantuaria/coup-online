@@ -17,12 +17,21 @@ const io = new Server(httpServer, {
 
 const roomManager = new RoomManager(io);
 
+app.get('/api/ping', (_req, res) => {
+  res.json({ ok: true, name: 'coup-online' });
+});
+
+app.get('/api/rooms', (_req, res) => {
+  res.json({ rooms: roomManager.getLobbySummaries() });
+});
+
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
   roomManager.handleConnection(socket);
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
+    roomManager.handleDisconnect(socket);
   });
 });
 

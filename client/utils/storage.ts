@@ -1,4 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { GameState } from '../engine/types';
+import type { CampaignRunState, CampaignProgressState } from '../campaign/types';
+import { DEFAULT_CAMPAIGN_PROGRESS } from '../campaign/progress';
 
 const KEYS = {
   playerName: '@coup/player_name',
@@ -9,6 +12,8 @@ const KEYS = {
   audioSfxVol: '@coup/audio_sfx_vol',
   audioMusicVol: '@coup/audio_music_vol',
   notifyInvites: '@coup/notify_invites',
+  onboardingSeen: '@coup/onboarding_seen_v1',
+  campaignProgress: '@coup/campaign_progress_v1',
 };
 
 /**
@@ -223,10 +228,56 @@ export function aggregateHistory(list: MatchHistoryEntry[]): HistoryAggregate {
 }
 
 /* ------------------------------------------------------------------ */
+/* Primeira abertura — onboarding rápido                               */
+/* ------------------------------------------------------------------ */
+
+export async function getOnboardingSeen(): Promise<boolean> {
+  try {
+    const v = await AsyncStorage.getItem(KEYS.onboardingSeen);
+    return v === '1';
+  } catch {
+    return false;
+  }
+}
+
+export async function setOnboardingSeen(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEYS.onboardingSeen, '1');
+  } catch {
+    /* ignora */
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Resume de partida em andamento                                     */
 /* ------------------------------------------------------------------ */
 
-export async function saveResumeSnapshot(snapshot: any): Promise<void> {
+export const RESUME_SNAPSHOT_VERSION = 1 as const;
+
+export interface OfflineResumeSnapshot {
+  version: typeof RESUME_SNAPSHOT_VERSION;
+  mode: 'offline';
+  savedAt: number;
+  engineState: GameState;
+  campaignRun?: CampaignRunState | null;
+}
+
+export function isOfflineResumeSnapshot(
+  data: unknown
+): data is OfflineResumeSnapshot {
+  if (!data || typeof data !== 'object') return false;
+  const o = data as Record<string, unknown>;
+  if (o.version !== RESUME_SNAPSHOT_VERSION || o.mode !== 'offline')
+    return false;
+  if (typeof o.savedAt !== 'number') return false;
+  const es = o.engineState;
+  if (!es || typeof es !== 'object') return false;
+  const g = es as Record<string, unknown>;
+  if (typeof g.phase !== 'string' || !Array.isArray(g.players)) return false;
+  return true;
+}
+
+export async function saveResumeSnapshot(snapshot: OfflineResumeSnapshot): Promise<void> {
   try {
     await AsyncStorage.setItem(KEYS.resumeSnapshot, JSON.stringify(snapshot));
   } catch {
@@ -247,6 +298,51 @@ export async function loadResumeSnapshot<T = any>(): Promise<T | null> {
 export async function clearResumeSnapshot(): Promise<void> {
   try {
     await AsyncStorage.removeItem(KEYS.resumeSnapshot);
+  } catch {
+    /* ignora */
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Campanha offline — Ascensão na Corte                               */
+/* ------------------------------------------------------------------ */
+
+export async function getCampaignProgress(): Promise<CampaignProgressState> {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.campaignProgress);
+    if (!raw) return { ...DEFAULT_CAMPAIGN_PROGRESS };
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed.rankIndex === 'number' &&
+      typeof parsed.winsInRank === 'number' &&
+      Array.isArray(parsed.unlockedRankIds)
+    ) {
+      return {
+        rankIndex: parsed.rankIndex,
+        winsInRank: parsed.winsInRank,
+        unlockedRankIds: parsed.unlockedRankIds,
+      };
+    }
+    return { ...DEFAULT_CAMPAIGN_PROGRESS };
+  } catch {
+    return { ...DEFAULT_CAMPAIGN_PROGRESS };
+  }
+}
+
+export async function setCampaignProgress(
+  state: CampaignProgressState
+): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEYS.campaignProgress, JSON.stringify(state));
+  } catch {
+    /* ignora */
+  }
+}
+
+export async function resetCampaignProgress(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(KEYS.campaignProgress);
   } catch {
     /* ignora */
   }

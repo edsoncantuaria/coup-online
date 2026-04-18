@@ -26,6 +26,7 @@
  * novas chaves semânticas.
  */
 
+import { Platform } from 'react-native';
 import {
   createAudioPlayer,
   setAudioModeAsync,
@@ -316,11 +317,21 @@ export async function initAudio(): Promise<void> {
   // Modo de áudio: toca mesmo com o celular no silencioso (iOS) e
   // convive com música de fundo em outros apps sem tomar o foco.
   try {
-    await setAudioModeAsync({
-      playsInSilentMode: true,
-      shouldPlayInBackground: false,
-      interruptionMode: 'mixWithOthers',
-    });
+    // Android (expo-audio 1.1): o bridge Kotlin espera ordinal de InterruptionMode, não string.
+    // Ordem no nativo: DO_NOT_MIX=0, DUCK_OTHERS=1, MIX_WITH_OTHERS=2
+    await setAudioModeAsync(
+      Platform.OS === 'android'
+        ? {
+            playsInSilentMode: true,
+            shouldPlayInBackground: false,
+            interruptionMode: 2 as any,
+          }
+        : {
+            playsInSilentMode: true,
+            shouldPlayInBackground: false,
+            interruptionMode: 'mixWithOthers',
+          }
+    );
   } catch (err) {
     if (__DEV__) console.warn('[sound] setAudioModeAsync falhou:', err);
   }
