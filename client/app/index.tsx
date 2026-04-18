@@ -52,7 +52,7 @@ import {
   type BotPersonality,
   type DifficultyConfig,
 } from '../utils/storage';
-import { setMuted as setSoundMuted } from '../utils/sound';
+import { setMuted as setSoundMuted, playMusic } from '../utils/sound';
 
 export default function LobbyScreen() {
   const insets = useSafeAreaInsets();
@@ -89,10 +89,13 @@ export default function LobbyScreen() {
     setAggregate(aggregateHistory(list));
   }, []);
 
-  // Recarrega histórico toda vez que a tela entra em foco (após uma partida)
+  // Recarrega histórico e liga a música do menu toda vez que a tela entra
+  // em foco (inclui o retorno após uma partida — faz crossfade automático
+  // entre a trilha do jogo e a do menu).
   useFocusEffect(
     React.useCallback(() => {
       reloadHistory();
+      playMusic('menu');
     }, [reloadHistory])
   );
 

@@ -5,6 +5,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { initAudio, setMutedFlag, stopAllSfx } from '../utils/sound';
+import { storage } from '../utils/storage';
 import '../global.css';
 
 SplashScreen.preventAutoHideAsync();
@@ -16,6 +18,22 @@ export default function RootLayout() {
     ScreenOrientation.lockAsync(
       ScreenOrientation.OrientationLock.LANDSCAPE
     ).catch(() => {});
+  }, []);
+
+  // Boot do sistema de áudio: preload + aplica mute persistido.
+  useEffect(() => {
+    (async () => {
+      try {
+        const muted = await storage.getMuted();
+        setMutedFlag(muted);
+        await initAudio();
+      } catch {
+        /* fallback silencioso */
+      }
+    })();
+    return () => {
+      stopAllSfx();
+    };
   }, []);
 
   useEffect(() => {

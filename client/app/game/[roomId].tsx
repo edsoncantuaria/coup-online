@@ -50,7 +50,14 @@ import {
   hapticError,
   hapticSelection,
 } from '../../utils/haptics';
-import { play as playSfx } from '../../utils/sound';
+import {
+  playSfx,
+  startLoop,
+  stopLoop,
+  stopAllSfx,
+  playMusic,
+  duckMusic,
+} from '../../utils/sound';
 
 export default function GameScreen() {
   const insets = useSafeAreaInsets();
@@ -179,10 +186,10 @@ export default function GameScreen() {
     lastRevealStampRef.current = lastReveal.stamp;
     if (lastReveal.verdict === 'proven') {
       hapticSuccess();
-      playSfx('reveal_success');
+      playSfx('CARD_REVEAL');
     } else {
       hapticError();
-      playSfx('reveal_bluff');
+      playSfx('BLUFF_FAIL');
     }
   }, [lastReveal]);
 
@@ -198,7 +205,7 @@ export default function GameScreen() {
     if (prevTransitioningRef.current && !transitioning) {
       if (statusInfo.waitingOnMe) {
         hapticLight();
-        playSfx('turn_start');
+        playSfx('SUCCESS');
       }
     }
     prevTransitioningRef.current = transitioning;
@@ -207,12 +214,15 @@ export default function GameScreen() {
   React.useEffect(() => {
     if (phase === 'game_over' && prevPhaseRef.current !== 'game_over') {
       const iWin = me && !me.cards.every((c: any) => c.isFlipped);
+      // Fim da partida: abaixa a música de fundo pra o stinger
+      // respirar (vitória/derrota são o pico emocional do jogo).
+      duckMusic(0.22, 4200);
       if (iWin) {
         hapticSuccess();
-        playSfx('victory');
+        playSfx('VICTORY');
       } else {
         hapticError();
-        playSfx('defeat');
+        playSfx('DEFEAT');
       }
 
       // Grava histórico da partida
@@ -269,17 +279,78 @@ export default function GameScreen() {
     if (!me) return;
     const coins = me.coins || 0;
     if (coins !== prevCoinsRef.current) {
-      if (coins > prevCoinsRef.current) playSfx('coin_gain');
-      else playSfx('coin_loss');
+      if (coins > prevCoinsRef.current) playSfx('COIN_GAIN');
+      else playSfx('COIN_LOSS');
       prevCoinsRef.current = coins;
     }
     const lost = me.cards?.filter((c: any) => c.isFlipped).length || 0;
     if (lost > prevCardsLostRef.current) {
       hapticHeavy();
-      playSfx('card_flip');
+      // Reforço duplo: som curto do flip + golpe emocional da perda.
+      playSfx('CARD_FLIP');
+      playSfx('LOSE_CARD', { delayMs: 180 });
       prevCardsLostRef.current = lost;
     }
   }, [me?.coins, me?.cards]);
+
+  // LOG: toca um "tick" discreto a cada nova linha na crônica.
+  const lastLogCountRef = React.useRef(logs.length);
+  React.useEffect(() => {
+    if (logs.length > lastLogCountRef.current) {
+      // Leve atraso em relação a moedas/UI — micro-timing orgânico.
+      const t = setTimeout(() => playSfx('LOG'), 80);
+      lastLogCountRef.current = logs.length;
+      return () => clearTimeout(t);
+    }
+    lastLogCountRef.current = logs.length;
+  }, [logs.length]);
+
+  // TIMER TICK / URGENT — loops temporais.
+  // Inicia apenas quando o humano está decidindo algo sob pressão;
+  // troca para URGENT nos últimos 10 segundos.
+  React.useEffect(() => {
+    const isMyDecision =
+      (phase === 'action' && isMyTurn) ||
+      (phase === 'losing_influence' && losingInfluenceId === myId) ||
+      ((phase === 'challenge' || phase === 'block') &&
+        waitingForResponseIndex !== null &&
+        players[waitingForResponseIndex]?.id === myId);
+
+    if (!isMyDecision || transitioning || typeof turnTimer !== 'number') {
+      stopLoop('TIMER_TICK');
+      stopLoop('TIMER_URGENT');
+      return;
+    }
+
+    if (turnTimer <= 10 && turnTimer > 0) {
+      stopLoop('TIMER_TICK');
+      startLoop('TIMER_URGENT');
+    } else if (turnTimer > 10) {
+      stopLoop('TIMER_URGENT');
+      startLoop('TIMER_TICK');
+    } else {
+      stopLoop('TIMER_TICK');
+      stopLoop('TIMER_URGENT');
+    }
+  }, [
+    phase,
+    isMyTurn,
+    losingInfluenceId,
+    myId,
+    waitingForResponseIndex,
+    transitioning,
+    turnTimer,
+  ]);
+
+  // Música do jogo: entra com crossfade vindo do menu. Ao sair da tela
+  // (voltar ao lobby), o index.tsx toca 'menu' em focus e o crossfade
+  // acontece sozinho; só paramos SFX residuais aqui.
+  React.useEffect(() => {
+    playMusic('game');
+    return () => {
+      stopAllSfx();
+    };
+  }, []);
 
   const handleAction = (type: string) => {
     hapticSelection();
@@ -537,6 +608,12 @@ export default function GameScreen() {
             me={me}
             isItsTurn={isMyTurn}
             phase={phase}
+            cardTension={
+              !transitioning &&
+              (phase === 'challenge' ||
+                phase === 'block' ||
+                phase === 'losing_influence')
+            }
             isLosingInfluence={false}
             isTargeted={
               !!currentAction?.target &&
@@ -808,12 +885,12 @@ export default function GameScreen() {
               maxTimer={30}
               onChallenge={() => {
                 hapticMedium();
-                playSfx('challenge');
+                playSfx('CHALLENGE');
                 sendResponse('challenge');
               }}
               onBlock={(role) => {
                 hapticMedium();
-                playSfx('block');
+                playSfx('BLOCK');
                 sendResponse('block', role);
               }}
               onPass={() => {

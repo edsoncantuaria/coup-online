@@ -24,6 +24,8 @@ interface PlayerHUDProps {
   isLosingInfluence?: boolean;
   isTargeted?: boolean;
   threatLabel?: string | null;
+  /** Momento de alto drama (desafio / bloqueio / sacrifício) — tremor sutil nas cartas. */
+  cardTension?: boolean;
   onSelectInfluence: (role: string) => void;
 }
 
@@ -35,6 +37,7 @@ function HeroCard({
   isFirst,
   onlyOneAlive,
   highlight,
+  tension,
   disabled,
   onPress,
   slotKey,
@@ -44,12 +47,30 @@ function HeroCard({
   isFirst: boolean;
   onlyOneAlive: boolean;
   highlight: boolean;
+  tension?: boolean;
   disabled: boolean;
   onPress: () => void;
   slotKey: string;
 }) {
   const press = useSharedValue(1);
   const shine = useSharedValue(0);
+  const jitter = useSharedValue(0);
+
+  useEffect(() => {
+    if (tension && !isFlipped) {
+      jitter.value = withRepeat(
+        withSequence(
+          withTiming(1, { duration: 52, easing: Easing.inOut(Easing.quad) }),
+          withTiming(-1, { duration: 52, easing: Easing.inOut(Easing.quad) }),
+          withTiming(0, { duration: 52, easing: Easing.inOut(Easing.quad) }),
+        ),
+        -1,
+        false,
+      );
+    } else {
+      jitter.value = withTiming(0, { duration: 160 });
+    }
+  }, [tension, isFlipped]);
 
   useEffect(() => {
     if (highlight && !isFlipped) {
@@ -67,7 +88,11 @@ function HeroCard({
     transform: [
       { rotate: onlyOneAlive ? '0deg' : isFirst ? '-3deg' : '3deg' },
       { scale: press.value },
-      { translateY: highlight && !isFlipped ? -4 : 0 },
+      { translateX: jitter.value * 2.2 },
+      {
+        translateY:
+          (highlight && !isFlipped ? -4 : 0) + jitter.value * -1.2,
+      },
     ],
   }));
 
@@ -128,6 +153,7 @@ export default function PlayerHUD({
   isLosingInfluence = false,
   isTargeted = false,
   threatLabel = null,
+  cardTension = false,
   onSelectInfluence,
 }: PlayerHUDProps) {
   const pulse = useSharedValue(0);
@@ -160,14 +186,15 @@ export default function PlayerHUD({
   }, [isTargeted]);
 
   // Flash dourado no coinBox quando moedas mudam (vida nas moedas).
-  // Usa spring para simular "impacto físico": salto rápido, retorno orgânico.
+  // Micro-delay (40ms) desloca o impacto do log/UI — ritmo mais natural.
   useEffect(() => {
-    coinPulse.value = withSequence(
-      // Impacto: sobe com spring energético (overshoot leve).
-      withSpring(1, { damping: 9, stiffness: 260, mass: 0.6 }),
-      // Release: retorno suave e alongado (sensação de peso).
-      withTiming(0, { duration: 1100, easing: Easing.out(Easing.cubic) }),
-    );
+    const t = setTimeout(() => {
+      coinPulse.value = withSequence(
+        withSpring(1, { damping: 9, stiffness: 260, mass: 0.6 }),
+        withTiming(0, { duration: 1100, easing: Easing.out(Easing.cubic) }),
+      );
+    }, 40);
+    return () => clearTimeout(t);
   }, [me?.coins]);
 
   const threatStyle = useAnimatedStyle(() => ({
@@ -273,6 +300,7 @@ export default function PlayerHUD({
                 isFirst={isFirst}
                 onlyOneAlive={onlyOneAlive}
                 highlight={isItsTurn && phase === 'action'}
+                tension={cardTension}
                 disabled={disabled}
                 onPress={() => onSelectInfluence(card.role)}
               />

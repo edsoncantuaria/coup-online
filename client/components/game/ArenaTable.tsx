@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ViewStyle, Pressable } from 'react-native';
 import { Coins } from 'lucide-react-native';
 import Animated, {
@@ -6,6 +6,8 @@ import Animated, {
   useAnimatedStyle,
   withRepeat,
   withTiming,
+  withSequence,
+  withSpring,
   interpolateColor,
   Easing,
 } from 'react-native-reanimated';
@@ -57,6 +59,8 @@ const PlayerNode = ({
   const glow = useSharedValue(0);
   const pulse = useSharedValue(0);
   const targetPulse = useSharedValue(0);
+  /** Respiração sutil no avatar ativo — presença viva sem competir com cartas. */
+  const avatarBreath = useSharedValue(0);
 
   useEffect(() => {
     if (isActing) {
@@ -93,6 +97,23 @@ const PlayerNode = ({
       targetPulse.value = withTiming(0, { duration: 300 });
     }
   }, [isTargeted, isDead]);
+
+  useEffect(() => {
+    if (isActing && !isDead) {
+      avatarBreath.value = withRepeat(
+        withTiming(1, { duration: 2200, easing: Easing.inOut(Easing.quad) }),
+        -1,
+        true,
+      );
+    } else {
+      avatarBreath.value = withTiming(0, { duration: 280 });
+    }
+  }, [isActing, isDead]);
+
+  const avatarBreathStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + avatarBreath.value * 0.035 }],
+    opacity: 0.92 + avatarBreath.value * 0.08,
+  }));
 
   const ringStyle = useAnimatedStyle(() => {
     // Prioridade visual: alvo > aguardando resposta > atuando > normal
@@ -145,9 +166,9 @@ const PlayerNode = ({
         <Animated.View style={[styles.avatarHalo, haloStyle]} pointerEvents="none" />
       )}
       <Animated.View style={[styles.avatarRing, ringStyle, isDead && styles.deadRing]}>
-        <View style={styles.avatar}>
+        <Animated.View style={[styles.avatar, avatarBreathStyle]}>
           <Text style={styles.avatarLetter}>{player.name[0]?.toUpperCase()}</Text>
-        </View>
+        </Animated.View>
         {isActing && !isDead && !isTargeted && (
           <View style={styles.actingPill}>
             <Text style={styles.actingPillText}>TURNO</Text>
@@ -262,6 +283,11 @@ export default function ArenaTable({
   const spotlightValue = useSharedValue(0);
   // Pulse extra só para clímax (faz a vinheta respirar quando há conflito).
   const climaxPulse = useSharedValue(0);
+  /** Dilatação temporal: mesa encolhe levemente ao entrar em clímax (cinema). */
+  const tableMoment = useSharedValue(1);
+  const prevIntensityRef = useRef<
+    'idle' | 'focus' | 'climax' | undefined
+  >(undefined);
 
   // Deriva o alvo de intensidade. `intensity` tem prioridade sobre `spotlight`.
   const targetIntensity: number = (() => {
@@ -281,12 +307,39 @@ export default function ArenaTable({
     );
   }, []);
 
+  // Antecipação ao entrar em clímax: primeiro degrau de luz, depois pico;
+  // fora do clímax, transição suave para idle/focus.
   useEffect(() => {
-    spotlightValue.value = withTiming(targetIntensity, {
-      duration: 520,
-      easing: Easing.out(Easing.cubic),
-    });
-  }, [targetIntensity]);
+    const prev = prevIntensityRef.current;
+    prevIntensityRef.current = intensity;
+
+    if (intensity === 'climax' && prev !== 'climax') {
+      // "Time dilation" na mesa — 0.92× por ~120ms, depois snap.
+      tableMoment.value = withSequence(
+        withTiming(0.92, {
+          duration: 120,
+          easing: Easing.inOut(Easing.quad),
+        }),
+        withSpring(1, { damping: 14, stiffness: 240 }),
+      );
+      // Buildup de luz antes do pico total (anticipation).
+      spotlightValue.value = withSequence(
+        withTiming(0.72, {
+          duration: 180,
+          easing: Easing.out(Easing.cubic),
+        }),
+        withSpring(1, { damping: 13, stiffness: 150 }),
+      );
+      return;
+    }
+
+    if (intensity !== 'climax') {
+      spotlightValue.value = withTiming(targetIntensity, {
+        duration: 520,
+        easing: Easing.out(Easing.cubic),
+      });
+    }
+  }, [intensity, targetIntensity]);
 
   useEffect(() => {
     if (isClimax) {
@@ -317,15 +370,20 @@ export default function ArenaTable({
   const sideVignetteStyle = useAnimatedStyle(() => ({
     opacity: Math.max(0, spotlightValue.value - 0.55) * 1.6,
   }));
-  // Glow central — aumenta intensidade e escala no clímax.
+  // Glow central — em "focus" fica mais contido para as cartas dominarem.
   const centerHaloStyle = useAnimatedStyle(() => {
     const v = spotlightValue.value;
     const breath = isClimax ? climaxPulse.value * 0.05 : 0;
+    const baseOpacity = 0.22 + v * 0.52;
     return {
-      opacity: 0.35 + v * 0.65,
-      transform: [{ scale: 1 + v * 0.1 + breath }],
+      opacity: baseOpacity + breath * 0.12,
+      transform: [{ scale: 1 + v * 0.08 + breath }],
     };
   });
+
+  const tableMomentStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: tableMoment.value }],
+  }));
   // Posições em arco superior para modo paisagem
   const getPosition = (index: number, total: number): ViewStyle => {
     const arc5: ViewStyle[] = [
@@ -396,8 +454,8 @@ export default function ArenaTable({
         />
       </Animated.View>
 
-      {/* Mesa */}
-      <View style={styles.tableShadow}>
+      {/* Mesa — com dilatação temporal ao entrar em clímax */}
+      <Animated.View style={[styles.tableShadow, tableMomentStyle]}>
         <LinearGradient
           colors={['#1A2230', '#0E1520', '#080C12']}
           start={{ x: 0.5, y: 0 }}
@@ -497,7 +555,7 @@ export default function ArenaTable({
             </LinearGradient>
           </View>
         </LinearGradient>
-      </View>
+      </Animated.View>
 
       {/* Jogadores */}
       {players.map((p, i) => (

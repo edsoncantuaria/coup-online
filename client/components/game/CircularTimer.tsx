@@ -45,9 +45,14 @@ export default function CircularTimer({
   const urgency = useSharedValue(0);
 
   useEffect(() => {
-    urgency.value = withTiming(seconds <= warnThreshold ? 1 : 0, {
-      duration: 400,
-    });
+    // Urgência progressiva nos últimos N segundos (não só on/off).
+    let u = 0;
+    if (seconds <= warnThreshold && seconds > 0) {
+      u = 1 - seconds / warnThreshold;
+    } else if (seconds <= 0 && warnThreshold > 0) {
+      u = 1;
+    }
+    urgency.value = withTiming(u, { duration: 380 });
 
     if (seconds <= warnThreshold && seconds > 0) {
       pulse.value = withRepeat(
@@ -63,7 +68,7 @@ export default function CircularTimer({
       pulse.value = withTiming(0, { duration: 200 });
     }
     return () => cancelAnimation(pulse);
-  }, [seconds]);
+  }, [seconds, warnThreshold]);
 
   const ringStyle = useAnimatedStyle(() => {
     const bg = interpolateColor(
