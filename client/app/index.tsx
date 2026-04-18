@@ -7,7 +7,7 @@ import {
   StyleSheet,
   Pressable,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -31,12 +31,27 @@ import {
   DoorOpen,
   Volume2,
   VolumeX,
+  Trophy,
 } from 'lucide-react-native';
 import { useGameState } from '../hooks/useGameState';
 import CourtAlert from '../components/CourtAlert';
 import RulesView from '../components/RulesView';
+import CommanderStatsPanel from '../components/lobby/CommanderStatsPanel';
+import MatchHistoryModal from '../components/lobby/MatchHistoryModal';
+import DifficultyModal from '../components/lobby/DifficultyModal';
 import { Theme } from '../constants/Theme';
-import { storage } from '../utils/storage';
+import {
+  storage,
+  getMatchHistory,
+  clearMatchHistory,
+  aggregateHistory,
+  getDifficulty,
+  setDifficulty,
+  type MatchHistoryEntry,
+  type HistoryAggregate,
+  type BotPersonality,
+  type DifficultyConfig,
+} from '../utils/storage';
 import { setMuted as setSoundMuted } from '../utils/sound';
 
 export default function LobbyScreen() {
@@ -45,8 +60,31 @@ export default function LobbyScreen() {
   const [name, setName] = useState('Nobre da Corte');
   const [room, setRoom] = useState('');
   const [showRules, setShowRules] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [muted, setMuted] = useState(false);
-  const { joinRoom, startOfflineGame } = useGameState();
+  const [history, setHistory] = useState<MatchHistoryEntry[]>([]);
+  const [aggregate, setAggregate] = useState<HistoryAggregate>(
+    aggregateHistory([])
+  );
+  const [showDifficulty, setShowDifficulty] = useState(false);
+  const [difficulty, setDifficultyState] = useState<DifficultyConfig>({
+    bots: 3,
+    personalities: ['balanced', 'balanced', 'balanced'],
+  });
+  const { joinRoom, startOfflineCampaign } = useGameState();
+
+  const reloadHistory = React.useCallback(async () => {
+    const list = await getMatchHistory();
+    setHistory(list);
+    setAggregate(aggregateHistory(list));
+  }, []);
+
+  // Recarrega histórico toda vez que a tela entra em foco (após uma partida)
+  useFocusEffect(
+    React.useCallback(() => {
+      reloadHistory();
+    }, [reloadHistory])
+  );
 
   // Carrega preferências persistidas
   useEffect(() => {
@@ -56,6 +94,8 @@ export default function LobbyScreen() {
       const m = await storage.getMuted();
       setMuted(m);
       setSoundMuted(m);
+      const diff = await getDifficulty();
+      if (diff) setDifficultyState(diff);
     })();
   }, []);
 
@@ -134,8 +174,22 @@ export default function LobbyScreen() {
   };
 
   const handleOffline = () => {
+    setShowDifficulty(true);
+  };
+
+  const handleStartCampaign = async (cfg: {
+    bots: number;
+    personalities: BotPersonality[];
+  }) => {
+    const next: DifficultyConfig = {
+      bots: cfg.bots,
+      personalities: cfg.personalities,
+    };
+    setDifficultyState(next);
+    await setDifficulty(next);
+    setShowDifficulty(false);
     const offlineName = name.trim() || 'Nobre Solitário';
-    startOfflineGame(offlineName);
+    startOfflineCampaign(offlineName, cfg.personalities);
     router.push('/game/OFFLINE');
   };
 
@@ -210,7 +264,18 @@ export default function LobbyScreen() {
               onPress={() => setShowRules(true)}
             >
               <BookOpen color={Theme.colors.gold} size={13} />
-              <Text style={styles.ghostBtnText}>COMPÊNDIO DA CORTE</Text>
+              <Text style={styles.ghostBtnText}>COMPÊNDIO</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.ghostBtn,
+                pressed && { opacity: 0.8 },
+              ]}
+              onPress={() => setShowHistory(true)}
+              accessibilityLabel="Ver histórico de partidas"
+            >
+              <Trophy color={Theme.colors.gold} size={13} />
+              <Text style={styles.ghostBtnText}>HISTÓRICO</Text>
             </Pressable>
             <Pressable
               style={({ pressed }) => [
@@ -226,10 +291,16 @@ export default function LobbyScreen() {
                 <Volume2 color={Theme.colors.gold} size={13} />
               )}
               <Text style={styles.ghostBtnText}>
-                {muted ? 'SILENCIADO' : 'SONS ATIVOS'}
+                {muted ? 'SILENCIADO' : 'SOM ATIVO'}
               </Text>
             </Pressable>
           </View>
+
+          <CommanderStatsPanel
+            aggregate={aggregate}
+            recent={history}
+            onOpenHistory={() => setShowHistory(true)}
+          />
         </Animated.View>
 
         {/* COLUNA DIREITA — Ações */}
@@ -345,6 +416,25 @@ export default function LobbyScreen() {
       />
 
       <RulesView visible={showRules} onClose={() => setShowRules(false)} />
+
+      <MatchHistoryModal
+        visible={showHistory}
+        onClose={() => setShowHistory(false)}
+        history={history}
+        aggregate={aggregate}
+        onClear={async () => {
+          await clearMatchHistory();
+          await reloadHistory();
+        }}
+      />
+
+      <DifficultyModal
+        visible={showDifficulty}
+        initialBots={difficulty.bots}
+        initialPersonalities={difficulty.personalities}
+        onClose={() => setShowDifficulty(false)}
+        onStart={handleStartCampaign}
+      />
     </View>
   );
 }

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { io, Socket } from 'socket.io-client';
 import { CoupEngine } from '../engine/CoupEngine';
 import { BotManager } from '../engine/BotManager';
+import { pickBotName } from '../utils/botNames';
 
 // Janela global entre transições para dar "fôlego" visual
 export const TRANSITION_MS = 3000;
@@ -28,6 +29,29 @@ interface GameState {
     verdict: 'proven' | 'bluff';
     stamp: number;
   } | null;
+  lastLoss: {
+    role: string;
+    playerName: string;
+    playerId: string;
+    stamp: number;
+  } | null;
+  lastResolved: {
+    actionType: string;
+    actorId: string;
+    actorName: string;
+    targetId?: string;
+    targetName?: string;
+    summary: string;
+    stamp: number;
+  } | null;
+  lastInvalid: {
+    reason: string;
+    actionType?: string;
+    stamp: number;
+  } | null;
+  deckCount: number;
+  matchStats: any | null;
+  winnerId: string | null;
 
   // Transições e timers
   transitioning: boolean;
@@ -36,6 +60,10 @@ interface GameState {
   // Actions
   connect: (url: string) => void;
   startOfflineGame: (playerName: string) => void;
+  startOfflineCampaign: (
+    playerName: string,
+    personalities: string[]
+  ) => void;
   joinRoom: (roomId: string, name: string) => void;
   sendAction: (action: any) => void;
   sendResponse: (response: any, role?: string) => void;
@@ -45,6 +73,7 @@ interface GameState {
   startGame: () => void;
   addBot: () => void;
   checkBotTurns: () => void;
+  addBotWithPersonality: (personality: string) => void;
   applyStateAfterMutation: (cooldownMs?: number) => void;
   maybeStartHumanTimer: () => void;
   clearHumanTimer: () => void;
@@ -70,6 +99,12 @@ export const useGameState = create<GameState>((set, get) => ({
   currentAction: null,
   pendingBlock: null,
   lastReveal: null,
+  lastLoss: null,
+  lastResolved: null,
+  lastInvalid: null,
+  deckCount: 0,
+  matchStats: null,
+  winnerId: null,
 
   transitioning: false,
   turnTimer: null,
@@ -112,10 +147,55 @@ export const useGameState = create<GameState>((set, get) => ({
       currentAction: null,
       pendingBlock: null,
       lastReveal: null,
+      lastLoss: null,
+      lastResolved: null,
+      matchStats: null,
+      winnerId: null,
       transitioning: false,
       turnTimer: null,
       logs: ['Modo Offline iniciado.'],
     });
+  },
+
+  startOfflineCampaign: (playerName: string, personalities: string[]) => {
+    const engine = new CoupEngine('offline-room');
+    engine.addPlayer('human-1', playerName);
+    const takenNames: string[] = [playerName];
+    personalities.forEach((p) => {
+      const botId = `bot-${Math.random().toString(36).substring(7)}`;
+      const name = pickBotName(takenNames);
+      takenNames.push(name);
+      engine.addPlayer(botId, name, true, p as any);
+    });
+    engine.startGame();
+    const state = engine.getState();
+    set({
+      localEngine: engine,
+      isOffline: true,
+      roomId: 'OFFLINE',
+      players: state.players,
+      phase: state.phase,
+      currentPlayerId: state.players[state.turnIndex]?.id,
+      waitingForResponseIndex: state.waitingForResponseIndex,
+      losingInfluenceId: null,
+      currentAction: state.currentAction,
+      pendingBlock: state.pendingBlock,
+      lastReveal: state.lastReveal ?? null,
+      lastLoss: (state as any).lastLoss ?? null,
+      lastResolved: (state as any).lastResolved ?? null,
+      deckCount: Array.isArray((state as any).deck)
+        ? (state as any).deck.length
+        : 0,
+      matchStats: (state as any).matchStats ?? null,
+      winnerId: (state as any).winnerId ?? null,
+      transitioning: false,
+      turnTimer: null,
+      logs: state.logs || ['Campanha iniciada.'],
+    });
+    // dispara a lógica de turno (bots etc.)
+    setTimeout(() => {
+      get().applyStateAfterMutation(400);
+    }, 0);
   },
 
   joinRoom: (roomId: string, name: string) => {
@@ -142,6 +222,10 @@ export const useGameState = create<GameState>((set, get) => ({
   },
 
   addBot: () => {
+    get().addBotWithPersonality('balanced');
+  },
+
+  addBotWithPersonality: (personality: string) => {
     const { socket, roomId, isOffline, localEngine, players } = get();
     if (players.length >= 6) {
       alert('A sala atingiu o limite máximo de 6 jogadores!');
@@ -150,11 +234,9 @@ export const useGameState = create<GameState>((set, get) => ({
 
     if (isOffline && localEngine) {
       const botId = `bot-${Math.random().toString(36).substring(7)}`;
-      localEngine.addPlayer(
-        botId,
-        `Bot ${localEngine.getState().players.length}`,
-        true
-      );
+      const taken = localEngine.getState().players.map((pl) => pl.name);
+      const name = pickBotName(taken);
+      localEngine.addPlayer(botId, name, true, personality as any);
       const state = localEngine.getState();
       set({
         players: [...state.players],
@@ -196,6 +278,22 @@ export const useGameState = create<GameState>((set, get) => ({
       lastReveal: (state as any).lastReveal
         ? { ...(state as any).lastReveal }
         : null,
+      lastLoss: (state as any).lastLoss
+        ? { ...(state as any).lastLoss }
+        : null,
+      lastResolved: (state as any).lastResolved
+        ? { ...(state as any).lastResolved }
+        : null,
+      lastInvalid: (state as any).lastInvalid
+        ? { ...(state as any).lastInvalid }
+        : null,
+      deckCount: Array.isArray((state as any).deck)
+        ? (state as any).deck.length
+        : 0,
+      matchStats: (state as any).matchStats
+        ? JSON.parse(JSON.stringify((state as any).matchStats))
+        : null,
+      winnerId: (state as any).winner || null,
       transitioning: true,
       turnTimer: null,
     });
@@ -213,7 +311,17 @@ export const useGameState = create<GameState>((set, get) => ({
     if (transitioning) return;
     get().clearHumanTimer();
     if (isOffline && localEngine) {
+      const beforeStamp =
+        (localEngine.getState() as any).lastInvalid?.stamp || 0;
       localEngine.handleAction('human-1', action);
+      const afterInvalid = (localEngine.getState() as any).lastInvalid;
+      // Ação recusada pela validação: propaga só o toast, sem congelar inputs.
+      if (afterInvalid && afterInvalid.stamp > beforeStamp) {
+        set({ lastInvalid: { ...afterInvalid } });
+        // Reinicia timer para o humano continuar tentando
+        get().maybeStartHumanTimer();
+        return;
+      }
       get().applyStateAfterMutation();
     } else if (socket && roomId) {
       socket.emit('game_action', { roomId, action });
@@ -392,7 +500,15 @@ export const useGameState = create<GameState>((set, get) => ({
     if (state.phase === 'action' && state.players[state.turnIndex]?.id === myId) {
       const action = botMgr.decideAction(myId);
       if (action) {
+        const beforeStamp =
+          (localEngine.getState() as any).lastInvalid?.stamp || 0;
         localEngine.handleAction(myId, action);
+        const afterInvalid = (localEngine.getState() as any).lastInvalid;
+        // Se o bot de emergência escolheu algo inválido (não deveria acontecer),
+        // cai num fallback seguro: income, que nunca falha.
+        if (afterInvalid && afterInvalid.stamp > beforeStamp) {
+          localEngine.handleAction(myId, { type: 'income', source: myId });
+        }
         get().applyStateAfterMutation();
       }
     } else if (

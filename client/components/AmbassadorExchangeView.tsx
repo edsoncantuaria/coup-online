@@ -6,6 +6,15 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  Easing,
+  interpolate,
+  FadeIn,
+} from 'react-native-reanimated';
 import { Check, RefreshCw } from 'lucide-react-native';
 import Card from './Card';
 import { Theme } from '../constants/Theme';
@@ -69,23 +78,14 @@ export default function AmbassadorExchangeView({
             const isSelected = selected.includes(key);
             const disabled = !isSelected && selected.length >= neededCount;
             return (
-              <TouchableOpacity
+              <FlippingCard
                 key={key}
-                activeOpacity={disabled ? 1 : 0.85}
+                role={role}
+                index={idx}
+                isSelected={isSelected}
+                disabled={disabled}
                 onPress={() => !disabled && toggleSelect(role, idx)}
-                style={[
-                  styles.cardWrapper,
-                  isSelected && styles.cardWrapperSelected,
-                  disabled && styles.cardWrapperDisabled,
-                ]}
-              >
-                <Card role={role} isFlipped={true} isDead={false} style={styles.card} />
-                {isSelected && (
-                  <View style={styles.checkOverlay}>
-                    <Check color={Theme.colors.background} size={14} strokeWidth={3} />
-                  </View>
-                )}
-              </TouchableOpacity>
+              />
             );
           })}
         </ScrollView>
@@ -121,6 +121,94 @@ export default function AmbassadorExchangeView({
         </View>
       </View>
     </View>
+  );
+}
+
+/**
+ * Card minimalista AAA com:
+ *  - flip 3D de entrada (rotação Y em cascata por índice)
+ *  - leve elevação e inclinação ao selecionar
+ *  - Shadow dourado quando ativa
+ */
+function FlippingCard({
+  role,
+  index,
+  isSelected,
+  disabled,
+  onPress,
+}: {
+  role: string;
+  index: number;
+  isSelected: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  const flip = useSharedValue(0);
+  const lift = useSharedValue(0);
+  const select = useSharedValue(0);
+
+  React.useEffect(() => {
+    flip.value = withDelay(
+      index * 90,
+      withTiming(1, { duration: 520, easing: Easing.out(Easing.cubic) })
+    );
+  }, []);
+
+  React.useEffect(() => {
+    select.value = withTiming(isSelected ? 1 : 0, { duration: 220 });
+  }, [isSelected]);
+
+  const frontStyle = useAnimatedStyle(() => {
+    // flip de -90° → 0° (efeito de carta "virando para a mão")
+    const rotate = interpolate(flip.value, [0, 1], [-90, 0]);
+    // elevação + rotação leve quando selecionada
+    const translateY = interpolate(
+      select.value,
+      [0, 1],
+      [0, -6]
+    );
+    const tilt = interpolate(select.value, [0, 1], [0, 4]);
+    return {
+      opacity: flip.value,
+      transform: [
+        { perspective: 600 },
+        { rotateY: `${rotate}deg` },
+        { rotateZ: `${tilt}deg` },
+        { translateY },
+      ],
+    };
+  });
+
+  return (
+    <TouchableOpacity
+      activeOpacity={disabled ? 1 : 0.85}
+      onPress={onPress}
+      onPressIn={() => {
+        lift.value = withTiming(1, { duration: 100 });
+      }}
+      onPressOut={() => {
+        lift.value = withTiming(0, { duration: 180 });
+      }}
+    >
+      <Animated.View
+        style={[
+          styles.cardWrapper,
+          isSelected && styles.cardWrapperSelected,
+          disabled && styles.cardWrapperDisabled,
+          frontStyle,
+        ]}
+      >
+        <Card role={role} isFlipped={true} isDead={false} style={styles.card} />
+        {isSelected && (
+          <Animated.View
+            entering={FadeIn.duration(220)}
+            style={styles.checkOverlay}
+          >
+            <Check color={Theme.colors.background} size={14} strokeWidth={3} />
+          </Animated.View>
+        )}
+      </Animated.View>
+    </TouchableOpacity>
   );
 }
 

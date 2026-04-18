@@ -1,4 +1,12 @@
-import { GameState, Player, Role, Action } from './types';
+import {
+  GameState,
+  Player,
+  Role,
+  Action,
+  MatchStats,
+  PlayerStats,
+  emptyPlayerStats,
+} from './types';
 
 export class CoupEngine {
   private state: GameState;
@@ -17,7 +25,12 @@ export class CoupEngine {
     };
   }
 
-  public addPlayer(id: string, name: string, isBot: boolean = false) {
+  public addPlayer(
+    id: string,
+    name: string,
+    isBot: boolean = false,
+    personality?: 'cautious' | 'tyrant' | 'bluffer' | 'balanced'
+  ) {
     this.state.players.push({
       id,
       name,
@@ -27,6 +40,7 @@ export class CoupEngine {
       deadCards: [],
       isConnected: true,
       isReady: false,
+      personality: isBot ? personality || 'balanced' : undefined,
     });
   }
 
@@ -49,7 +63,74 @@ export class CoupEngine {
     this.state.phase = 'action';
     this.state.waitingForResponseIndex = null;
     this.state.responses = {};
+
+    // Inicializa estatísticas da partida
+    const perPlayer: Record<string, PlayerStats> = {};
+    this.state.players.forEach(p => {
+      perPlayer[p.id] = emptyPlayerStats();
+    });
+    this.state.matchStats = {
+      startedAt: Date.now(),
+      round: 1,
+      perPlayer,
+    };
+
     this.addLog(`🎲 Sorteio: ${this.getCurrentPlayer().name} começa o jogo!`);
+  }
+
+  /** Helpers de estatística (no-op se matchStats não existe) */
+  private bumpStat(
+    playerId: string | undefined,
+    key: keyof PlayerStats,
+    delta: number = 1
+  ) {
+    if (!playerId || !this.state.matchStats) return;
+    const stats = this.state.matchStats.perPlayer[playerId];
+    if (!stats) return;
+    const cur = stats[key];
+    if (typeof cur === 'number') {
+      (stats[key] as number) = cur + delta;
+    }
+  }
+
+  private recordCoinChange(playerId: string | undefined, delta: number) {
+    if (!playerId || !this.state.matchStats) return;
+    const stats = this.state.matchStats.perPlayer[playerId];
+    if (!stats) return;
+    if (delta > 0) stats.coinsGained += delta;
+    else stats.coinsLost += -delta;
+  }
+
+  private recordCardLost(playerId: string | undefined) {
+    if (!playerId || !this.state.matchStats) return;
+    const stats = this.state.matchStats.perPlayer[playerId];
+    if (!stats) return;
+    stats.cardsLost += 1;
+    const player = this.state.players.find(p => p.id === playerId);
+    if (player && player.cards.every(c => c.isFlipped)) {
+      stats.eliminatedAtRound = this.state.matchStats!.round;
+    }
+  }
+
+  private setResolved(
+    actionType: string,
+    actorId: string,
+    summary: string,
+    targetId?: string
+  ) {
+    const actor = this.state.players.find(p => p.id === actorId);
+    const target = targetId
+      ? this.state.players.find(p => p.id === targetId)
+      : undefined;
+    this.state.lastResolved = {
+      actionType,
+      actorId,
+      actorName: actor?.name || '?',
+      targetId,
+      targetName: target?.name,
+      summary,
+      stamp: Date.now(),
+    };
   }
 
   private buildDeck(): Role[] {
@@ -117,31 +198,120 @@ export class CoupEngine {
     return dict[type] || type;
   }
 
-  public handleAction(playerId: string, action: Action) {
-    if (this.state.phase !== 'action') return;
-    if (playerId !== this.getCurrentPlayer().id) return;
-    
-    this.state.currentAction = action;
-    this.state.pendingBlock = undefined; // Garante que nenhum bloqueio anterior vaze
-    this.state.responses = {};
-    const player = this.state.players.find(p => p.id === playerId);
-    if (!player) return;
+  /**
+   * Valida uma ação antes de aplicá-la, refletindo TODAS as regras oficiais
+   * do Coup. Retorna `{ ok: true }` se a ação é legal, ou `{ ok: false, reason }`
+   * com motivo para feedback na UI/log.
+   */
+  public validateAction(
+    playerId: string,
+    action: Action
+  ): { ok: true } | { ok: false; reason: string } {
+    if (this.state.phase !== 'action')
+      return { ok: false, reason: 'Não é a fase de ação.' };
 
-    const actionName = this.translateAction(action.type);
-    
-    // Regra das 10 moedas: Se tem >= 10, DEVE dar golpe
+    const current = this.getCurrentPlayer();
+    if (playerId !== current.id)
+      return { ok: false, reason: 'Não é o seu turno.' };
+
+    const player = this.state.players.find(p => p.id === playerId);
+    if (!player) return { ok: false, reason: 'Jogador não encontrado.' };
+
+    const isAlive = player.cards.some(c => !c.isFlipped);
+    if (!isAlive)
+      return { ok: false, reason: 'Jogador eliminado não pode agir.' };
+
+    // Regra das 10 moedas: Coup obrigatório
     if (player.coins >= 10 && action.type !== 'coup') {
-      this.addLog(`⚠️ ${player.name} tem 10 ou mais moedas e DEVE realizar um Golpe de Estado.`);
+      return {
+        ok: false,
+        reason:
+          'Com 10 moedas ou mais o jogador é OBRIGADO a realizar um Golpe de Estado.',
+      };
+    }
+
+    // Custos
+    if (action.type === 'coup' && player.coins < 7)
+      return { ok: false, reason: 'Golpe requer 7 moedas.' };
+    if (action.type === 'assassinate' && player.coins < 3)
+      return { ok: false, reason: 'Assassinato requer 3 moedas.' };
+
+    // Targets — quem precisa, quem não pode ter
+    const NEEDS_TARGET = ['coup', 'assassinate', 'steal'];
+    const FORBIDS_TARGET = ['income', 'foreign_aid', 'tax', 'exchange'];
+
+    if (NEEDS_TARGET.includes(action.type)) {
+      if (!action.target)
+        return { ok: false, reason: 'Esta ação exige um alvo.' };
+      if (action.target === playerId)
+        return {
+          ok: false,
+          reason: 'Você não pode escolher a si mesmo como alvo.',
+        };
+      const target = this.state.players.find(p => p.id === action.target);
+      if (!target)
+        return { ok: false, reason: 'Alvo inexistente.' };
+      if (target.cards.every(c => c.isFlipped))
+        return { ok: false, reason: 'Alvo já está eliminado.' };
+      // Steal exige que o alvo tenha pelo menos 1 moeda (regra oficial)
+      if (action.type === 'steal' && target.coins < 1)
+        return {
+          ok: false,
+          reason: 'Não é possível roubar de quem não tem moedas.',
+        };
+    } else if (FORBIDS_TARGET.includes(action.type)) {
+      if (action.target)
+        return {
+          ok: false,
+          reason: 'Esta ação não pode ter alvo.',
+        };
+    }
+
+    // Tipo desconhecido
+    const KNOWN = [
+      'income',
+      'foreign_aid',
+      'tax',
+      'steal',
+      'assassinate',
+      'exchange',
+      'coup',
+    ];
+    if (!KNOWN.includes(action.type))
+      return { ok: false, reason: 'Ação desconhecida.' };
+
+    return { ok: true };
+  }
+
+  public handleAction(playerId: string, action: Action) {
+    const check = this.validateAction(playerId, action);
+    if (!check.ok) {
+      this.addLog(`⛔ Ação inválida: ${check.reason}`);
+      this.state.lastInvalid = {
+        reason: check.reason,
+        actionType: action.type,
+        stamp: Date.now(),
+      };
       return;
     }
 
+    const player = this.state.players.find(p => p.id === playerId)!;
+    this.state.currentAction = action;
+    this.state.pendingBlock = undefined; // Garante que nenhum bloqueio anterior vaze
+    this.state.responses = {};
+
+    const actionName = this.translateAction(action.type);
+
     this.addLog(`📢 ${player.name} declarou ${actionName}${action.target ? ' contra ' + this.getPlayerName(action.target) : ''}`);
+    this.bumpStat(player.id, 'actionsTaken');
 
     // Dedução imediata de moedas (Regra Oficial: Paga na declaração)
     if (action.type === 'assassinate') {
       player.coins -= 3;
+      this.recordCoinChange(player.id, -3);
     } else if (action.type === 'coup') {
       player.coins -= 7;
+      this.recordCoinChange(player.id, -7);
     }
 
     if (this.isActionChallengeable(action.type)) {
@@ -237,6 +407,16 @@ export class CoupEngine {
       if (this.state.pendingBlock) {
         // Alguém bloqueou e ninguém desafiou o bloqueio. A ação falha.
         this.addLog(`🚫 O bloqueio de ${this.getPlayerName(this.state.pendingBlock.blockerId)} foi aceito e a ação não surtirá efeito.`);
+        this.bumpStat(this.state.pendingBlock.blockerId, 'blocksSuccess');
+        const blockedAction = this.state.currentAction;
+        if (blockedAction) {
+          this.setResolved(
+            blockedAction.type,
+            blockedAction.source,
+            `Bloqueio com ${this.translateRole(this.state.pendingBlock.role)} impediu ${this.translateAction(blockedAction.type)}.`,
+            blockedAction.target
+          );
+        }
         this.state.currentAction = null;
         this.state.pendingBlock = null;
         this.nextTurn();
@@ -264,6 +444,7 @@ export class CoupEngine {
 
     if (response === 'challenge') {
       this.addLog(`⚔️ ${expectedPlayer.name} DESAFIOU!`);
+      this.bumpStat(playerId, 'challengesMade');
       this.resolveChallenge(playerId);
       return;
     }
@@ -291,9 +472,10 @@ export class CoupEngine {
       else if (actionType === 'steal') blockRole = role || 'captain';
 
       this.addLog(`🛡️ ${expectedPlayer.name} bloqueia como ${this.translateRole(blockRole)}!`);
+      this.bumpStat(playerId, 'blocksMade');
       this.state.phase = 'block';
       this.state.responses = {};
-      
+
       this.state.pendingBlock = {
         blockerId: playerId,
         actionType: this.state.currentAction?.type || '',
@@ -337,6 +519,12 @@ export class CoupEngine {
 
     if (hasCard) {
       this.addLog(`✅ ${targetPlayer.name} PROVOU ser ${this.translateRole(actionRole)}!`);
+      // Desafiante errou: perdeu um desafio. Alvo sobreviveu à acusação.
+      this.bumpStat(challengerId, 'challengesLost');
+      this.bumpStat(targetPlayer.id, 'bluffsSurvived');
+      if (isChallengingBlock) {
+        this.bumpStat(targetPlayer.id, 'blocksSuccess');
+      }
       this.state.lastReveal = {
         role: actionRole,
         playerName: targetPlayer.name,
@@ -351,10 +539,17 @@ export class CoupEngine {
       const oldRole = targetPlayer.cards[cardIndex].role;
       this.state.deck.push(oldRole);
       this.state.deck = this.shuffleDeck(this.state.deck);
-      targetPlayer.cards[cardIndex] = {
-        role: this.state.deck.pop() as Role,
-        isFlipped: false,
-      };
+      const newRole = this.state.deck.pop();
+      if (!newRole) {
+        // Cenário extremamente improvável: deck vazio. Mantém a carta provada
+        // (oldRole) e relogga, evitando undefined e card "fantasma".
+        this.addDebugLog(
+          `⚠️ Deck vazio ao trocar carta provada de ${targetPlayer.name}. Mantendo ${oldRole}.`
+        );
+        targetPlayer.cards[cardIndex] = { role: oldRole, isFlipped: false };
+      } else {
+        targetPlayer.cards[cardIndex] = { role: newRole, isFlipped: false };
+      }
 
       if (isChallengingBlock) {
         // Bloqueio legítimo: Ação original é abortada
@@ -378,6 +573,12 @@ export class CoupEngine {
       }
     } else {
       this.addLog(`❗ ${targetPlayer.name} estava blefando!`);
+      // Desafiante acertou: ganhou o desafio. Alvo foi pego blefando.
+      this.bumpStat(challengerId, 'challengesWon');
+      this.bumpStat(targetPlayer.id, 'bluffsCaught');
+      if (isChallengingBlock) {
+        this.bumpStat(targetPlayer.id, 'blocksFailed');
+      }
       this.state.lastReveal = {
         role: actionRole,
         playerName: targetPlayer.name,
@@ -446,42 +647,72 @@ export class CoupEngine {
     switch (action.type) {
       case 'income':
         source.coins += 1;
+        this.recordCoinChange(source.id, 1);
+        this.setResolved(action.type, source.id, `${source.name} tomou Renda (+1).`);
         this.addLog(`💰 ${source.name} agora tem ${source.coins} moedas.`);
         break;
       case 'tax':
         source.coins += 3;
+        this.recordCoinChange(source.id, 3);
+        this.setResolved(action.type, source.id, `${source.name} taxou como Duque (+3).`);
         this.addLog(`💰 ${source.name} agora tem ${source.coins} moedas.`);
         break;
       case 'foreign_aid':
         source.coins += 2;
+        this.recordCoinChange(source.id, 2);
+        this.setResolved(action.type, source.id, `${source.name} recebeu Ajuda Externa (+2).`);
         this.addLog(`💰 ${source.name} agora tem ${source.coins} moedas.`);
         break;
-      case 'steal':
+      case 'steal': {
         const target = this.state.players.find(p => p.id === action.target);
         if (target) {
           const amount = Math.min(target.coins, 2);
           target.coins -= amount;
           source.coins += amount;
+          this.recordCoinChange(source.id, amount);
+          this.recordCoinChange(target.id, -amount);
+          this.setResolved(
+            action.type,
+            source.id,
+            `${source.name} roubou ${amount} moeda${amount === 1 ? '' : 's'} de ${target.name}.`,
+            target.id
+          );
           this.addLog(`💰 Roubo: ${source.name} (+${amount}) | ${target.name} (${target.coins} restantes).`);
         }
         break;
+      }
       case 'assassinate':
         if (action.target) {
+          const tgt = this.state.players.find(p => p.id === action.target);
+          this.setResolved(
+            action.type,
+            source.id,
+            `${source.name} ordena assassinato contra ${tgt?.name || '??'}.`,
+            action.target
+          );
           const pending = this.loseInfluence(action.target, 'next_turn');
           if (!pending) this.nextTurn();
         } else {
           this.nextTurn();
         }
-        return; // Usa return para não cair no nextTurn() abaixo
+        return;
       case 'coup':
         if (action.target) {
+          const tgt = this.state.players.find(p => p.id === action.target);
+          this.setResolved(
+            action.type,
+            source.id,
+            `${source.name} executa Golpe contra ${tgt?.name || '??'}.`,
+            action.target
+          );
           const pending = this.loseInfluence(action.target, 'next_turn');
           if (!pending) this.nextTurn();
         } else {
           this.nextTurn();
         }
-        return; // Usa return para não cair no nextTurn() abaixo
+        return;
       case 'exchange':
+        this.setResolved(action.type, source.id, `${source.name} trocou cartas com a Corte.`);
         this.handleExchange(source);
         return;
     }
@@ -492,8 +723,17 @@ export class CoupEngine {
   public nextTurn() {
     if (this.state.phase === 'game_over') return;
     this.addLog(`🔄 Passando o turno...`);
+    const previous = this.state.turnIndex;
     this.state.turnIndex = (this.state.turnIndex + 1) % this.state.players.length;
-    
+
+    // Nova rodada quando o índice de turno dá a volta (passa do último para 0)
+    if (this.state.matchStats && this.state.turnIndex <= previous) {
+      // Só incrementa se realmente deu a volta (não quando pula um morto)
+      if (previous === this.state.players.length - 1 && this.state.turnIndex === 0) {
+        this.state.matchStats.round += 1;
+      }
+    }
+
     if (this.checkWinner()) return;
 
     while (this.state.players[this.state.turnIndex].cards.every(c => c.isFlipped)) {
@@ -528,6 +768,9 @@ export class CoupEngine {
       this.state.phase = 'game_over';
       this.state.winner = alivePlayers[0]?.id;
       this.state.currentAction = null; // Limpa ação pendente para evitar "ações fantasma"
+      if (this.state.matchStats) {
+        this.state.matchStats.endedAt = Date.now();
+      }
       this.addLog(`🏆 FIM DE JOGO! O Reino agora pertence a ${alivePlayers[0]?.name || 'ninguém'}.`);
       return true;
     }
@@ -557,6 +800,13 @@ export class CoupEngine {
       const card = aliveCards[0];
       card.isFlipped = true;
       this.addLog(`💀 ${player.name} perdeu sua última influência (${this.translateRole(card.role)})!`);
+      this.state.lastLoss = {
+        role: card.role,
+        playerName: player.name,
+        playerId: player.id,
+        stamp: Date.now(),
+      };
+      this.recordCardLost(playerId);
       this.checkWinner();
       return false;
     } else {
@@ -583,6 +833,13 @@ export class CoupEngine {
     if (card) {
       card.isFlipped = true;
       this.addLog(`📉 ${player.name} revelou e perdeu seu ${this.translateRole(role)}.`);
+      this.state.lastLoss = {
+        role,
+        playerName: player.name,
+        playerId: player.id,
+        stamp: Date.now(),
+      };
+      this.recordCardLost(playerId);
       console.log(`[Engine] Card flipped: ${playerId} lost ${role}`);
       
       const resolution = this.state.pendingResolution?.type || 'next_turn';
@@ -622,7 +879,29 @@ export class CoupEngine {
     // Combinar cartas atuais vivas com as compradas
     const currentAliveRoles = player.cards.filter(c => !c.isFlipped).map(c => c.role);
     const currentAndDrew = [...currentAliveRoles, ...this.state.exchangingCards];
-    
+
+    // Validação 1: deve manter exatamente o mesmo número de cartas vivas
+    if (keptRoles.length !== currentAliveRoles.length) {
+      this.addLog(
+        `⛔ Troca inválida: deve manter exatamente ${currentAliveRoles.length} carta(s).`
+      );
+      return;
+    }
+
+    // Validação 2: keptRoles deve ser um subconjunto válido (com multiplicidade)
+    // de currentAndDrew — sem duplicar cartas que não existem no pool.
+    const pool = [...currentAndDrew];
+    for (const r of keptRoles) {
+      const idx = pool.indexOf(r);
+      if (idx === -1) {
+        this.addLog(
+          `⛔ Troca inválida: tentativa de manter ${this.translateRole(r)} fora do pool.`
+        );
+        return;
+      }
+      pool.splice(idx, 1);
+    }
+
     // Atualizar as cartas do jogador
     let keptIdx = 0;
     player.cards.forEach(c => {
@@ -632,8 +911,8 @@ export class CoupEngine {
         }
     });
 
-    // Devolve as outras para o deck
-    const toReturn = currentAndDrew.filter(role => !keptRoles.includes(role));
+    // Devolve para o deck o restante exato (pool consumido acima).
+    const toReturn = pool;
     const toReturnStr = toReturn.length > 0
       ? toReturn.map(r => this.translateRole(r)).join(', ')
       : 'nenhuma';

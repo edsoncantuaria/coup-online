@@ -12,6 +12,8 @@ export interface Card {
   isFlipped: boolean;
 }
 
+export type BotPersonality = 'cautious' | 'tyrant' | 'bluffer' | 'balanced';
+
 export interface Player {
   id: string;
   name: string;
@@ -21,6 +23,7 @@ export interface Player {
   deadCards: Role[];
   isConnected: boolean;
   isReady: boolean;
+  personality?: BotPersonality;
 }
 
 export interface GameState {
@@ -58,5 +61,74 @@ export interface GameState {
     playerId: string;
     verdict: 'proven' | 'bluff';
     stamp: number;
+  };
+
+  /** Última perda de influência para overlay central de carta caindo */
+  lastLoss?: {
+    role: Role;
+    playerName: string;
+    playerId: string;
+    stamp: number;
+  };
+
+  /** Banner da última ação resolvida (para toast na UI) */
+  lastResolved?: {
+    actionType: string;
+    actorId: string;
+    actorName: string;
+    targetId?: string;
+    targetName?: string;
+    summary: string;
+    stamp: number;
+  };
+
+  /** Estatísticas agregadas da partida para tela final e histórico */
+  matchStats?: MatchStats;
+
+  /** Última ação inválida (rejeitada por validateAction) — usada para toast na UI */
+  lastInvalid?: {
+    reason: string;
+    actionType?: string;
+    stamp: number;
+  };
+}
+
+export interface PlayerStats {
+  actionsTaken: number;
+  challengesMade: number;
+  challengesWon: number;
+  challengesLost: number;
+  bluffsCaught: number;
+  bluffsSurvived: number;
+  blocksMade: number;
+  blocksSuccess: number;
+  blocksFailed: number;
+  coinsGained: number;
+  coinsLost: number;
+  cardsLost: number;
+  eliminatedAtRound?: number;
+}
+
+export interface MatchStats {
+  startedAt: number;
+  endedAt?: number;
+  round: number;
+  perPlayer: Record<string, PlayerStats>;
+}
+
+export function emptyPlayerStats(): PlayerStats {
+  return {
+    actionsTaken: 0,
+    challengesMade: 0,
+    challengesWon: 0,
+    challengesLost: 0,
+    bluffsCaught: 0,
+    bluffsSurvived: 0,
+    blocksMade: 0,
+    blocksSuccess: 0,
+    blocksFailed: 0,
+    coinsGained: 0,
+    coinsLost: 0,
+    cardsLost: 0,
   };
 }

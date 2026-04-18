@@ -19,6 +19,8 @@ interface ActionPanelProps {
   disabledActions?: boolean;
   /** Nº de oponentes vivos - usado para preview de risco */
   aliveOpponents?: number;
+  /** Total de moedas dos oponentes vivos (para validar Roubo) */
+  opponentsCoinsTotal?: number;
 }
 
 export default function ActionPanel({
@@ -26,6 +28,7 @@ export default function ActionPanel({
   coins,
   disabledActions,
   aliveOpponents = 0,
+  opponentsCoinsTotal = 0,
 }: ActionPanelProps) {
   const basicActions = [
     {
@@ -82,10 +85,17 @@ export default function ActionPanel({
     },
   ];
 
-  const isDisabled = (cost: number, id: string) =>
-    !!disabledActions ||
-    coins < cost ||
-    (coins >= 10 && id !== 'coup');
+  const isDisabled = (cost: number, id: string) => {
+    if (disabledActions) return true;
+    if (coins < cost) return true;
+    if (coins >= 10 && id !== 'coup') return true;
+    // Roubo só é possível se houver pelo menos 1 moeda no campo inimigo.
+    if (id === 'steal' && opponentsCoinsTotal <= 0) return true;
+    // Golpe / Assassinato exigem alvo vivo
+    if ((id === 'coup' || id === 'assassinate') && aliveOpponents <= 0)
+      return true;
+    return false;
+  };
 
   // Preview de risco: quem pode contestar/bloquear
   const plural = (n: number, one: string, many: string) =>

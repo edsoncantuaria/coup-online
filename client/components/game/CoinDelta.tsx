@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -10,6 +10,7 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { Theme } from '../../constants/Theme';
+import CoinBurst from './CoinBurst';
 
 interface CoinDeltaProps {
   /** Valor atual de moedas do jogador */
@@ -23,6 +24,7 @@ interface CoinDeltaProps {
 export default function CoinDelta({ coins }: CoinDeltaProps) {
   const prev = useRef<number>(coins);
   const [delta, setDelta] = useState<number | null>(null);
+  const [burstTrigger, setBurstTrigger] = useState<number | null>(null);
 
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -33,6 +35,7 @@ export default function CoinDelta({ coins }: CoinDeltaProps) {
     if (diff === 0) return;
 
     setDelta(diff);
+    setBurstTrigger(Date.now());
     opacity.value = 0;
     translateY.value = 0;
 
@@ -60,21 +63,23 @@ export default function CoinDelta({ coins }: CoinDeltaProps) {
 
   const isGain = delta > 0;
   return (
-    <Animated.Text
-      style={[
-        styles.text,
-        style,
-        {
-          color: isGain ? Theme.colors.gold : Theme.colors.error,
-          textShadowColor: isGain
-            ? 'rgba(198, 161, 91, 0.6)'
-            : 'rgba(229, 86, 78, 0.55)',
-        },
-      ]}
-      pointerEvents="none"
-    >
-      {isGain ? `+${delta}` : `${delta}`}
-    </Animated.Text>
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <CoinBurst trigger={burstTrigger} direction={isGain ? 'up' : 'down'} />
+      <Animated.Text
+        style={[
+          styles.text,
+          style,
+          {
+            color: isGain ? Theme.colors.gold : Theme.colors.error,
+            textShadowColor: isGain
+              ? 'rgba(198, 161, 91, 0.6)'
+              : 'rgba(229, 86, 78, 0.55)',
+          },
+        ]}
+      >
+        {isGain ? `+${delta}` : `${delta}`}
+      </Animated.Text>
+    </View>
   );
 }
 

@@ -20,6 +20,8 @@ interface PlayerHUDProps {
   isItsTurn: boolean;
   phase: string;
   isLosingInfluence?: boolean;
+  isTargeted?: boolean;
+  threatLabel?: string | null;
   onSelectInfluence: (role: string) => void;
 }
 
@@ -28,9 +30,12 @@ export default function PlayerHUD({
   isItsTurn,
   phase,
   isLosingInfluence = false,
+  isTargeted = false,
+  threatLabel = null,
   onSelectInfluence,
 }: PlayerHUDProps) {
   const pulse = useSharedValue(0);
+  const threatPulse = useSharedValue(0);
   const choosing = phase === 'losing_influence' && isLosingInfluence;
 
   useEffect(() => {
@@ -44,6 +49,23 @@ export default function PlayerHUD({
       pulse.value = withTiming(0, { duration: 300 });
     }
   }, [isItsTurn, choosing]);
+
+  useEffect(() => {
+    if (isTargeted) {
+      threatPulse.value = withRepeat(
+        withTiming(1, { duration: 700, easing: Easing.inOut(Easing.quad) }),
+        -1,
+        true
+      );
+    } else {
+      threatPulse.value = withTiming(0, { duration: 250 });
+    }
+  }, [isTargeted]);
+
+  const threatStyle = useAnimatedStyle(() => ({
+    opacity: 0.75 + threatPulse.value * 0.25,
+    transform: [{ scale: 1 + threatPulse.value * 0.04 }],
+  }));
 
   const turnPillStyle = useAnimatedStyle(() => ({
     shadowOpacity: pulse.value * 0.8,
@@ -60,12 +82,27 @@ export default function PlayerHUD({
     <>
       {/* Info canto inferior esquerdo */}
       <View style={styles.leftDock} pointerEvents="box-none">
+        {isTargeted && threatLabel && (
+          <Animated.View style={[styles.threatPill, threatStyle]}>
+            <Text style={styles.threatPillText} numberOfLines={1}>
+              {threatLabel}
+            </Text>
+          </Animated.View>
+        )}
         <View style={styles.coinBox}>
           <Coins color={Theme.colors.gold} size={18} />
           <Text style={styles.coinText}>{me.coins}</Text>
           <Text style={styles.coinLabel}>MOEDAS</Text>
           <CoinDelta coins={me.coins} />
         </View>
+
+        {me.coins >= 10 && isItsTurn && (
+          <View style={styles.coupForcedPill}>
+            <Text style={styles.coupForcedText}>
+              GOLPE OBRIGATÓRIO
+            </Text>
+          </View>
+        )}
 
         <Animated.View
           style={[
@@ -107,6 +144,10 @@ export default function PlayerHUD({
           {me.cards?.map((card: any, i: number) => {
             const disabled = !choosing || card.isFlipped;
             const isFirst = i === 0;
+            const aliveCount = me.cards.filter(
+              (c: any) => !c.isFlipped
+            ).length;
+            const onlyOneAlive = aliveCount === 1;
             // Key inclui role+isFlipped: quando o engine substitui a carta
             // provada, a key muda, forçando remontagem + animação de entrada.
             const slotKey = `slot-${i}-${card.role}-${card.isFlipped ? 'x' : 'o'}`;
@@ -118,8 +159,12 @@ export default function PlayerHUD({
                 style={[
                   styles.cardWrapper,
                   isFirst
-                    ? { transform: [{ rotate: '-3deg' }] }
-                    : { transform: [{ rotate: '3deg' }], marginLeft: 10 },
+                    ? { transform: [{ rotate: onlyOneAlive ? '0deg' : '-3deg' }] }
+                    : {
+                        transform: [{ rotate: onlyOneAlive ? '0deg' : '3deg' }],
+                        marginLeft: onlyOneAlive ? 16 : 10,
+                      },
+                  card.isFlipped && onlyOneAlive && styles.faintDeadCard,
                 ]}
               >
                 <TouchableOpacity
@@ -127,6 +172,14 @@ export default function PlayerHUD({
                   onPress={() => onSelectInfluence(card.role)}
                   activeOpacity={0.75}
                   hitSlop={8}
+                  accessibilityLabel={
+                    card.isFlipped
+                      ? `Carta revelada: ${card.role}`
+                      : choosing
+                      ? `Tocar para descartar a carta ${card.role}`
+                      : 'Carta oculta'
+                  }
+                  accessibilityRole="button"
                 >
                   <Card
                     role={card.role}
@@ -238,6 +291,9 @@ const styles = StyleSheet.create({
     borderColor: Theme.colors.imperialRed,
     borderWidth: 2.5,
   },
+  faintDeadCard: {
+    opacity: 0.35,
+  },
   handLabel: {
     color: Theme.colors.textMuted,
     fontSize: 8,
@@ -245,6 +301,39 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     marginTop: 4,
     marginRight: 6,
+  },
+  threatPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: Theme.radius.sm,
+    backgroundColor: 'rgba(168,58,58,0.22)',
+    borderWidth: 1,
+    borderColor: Theme.colors.imperialRed,
+    ...Theme.shadows.redGlow,
+  },
+  threatPillText: {
+    color: '#FFD4D4',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.6,
+  },
+  coupForcedPill: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: Theme.radius.sm,
+    backgroundColor: 'rgba(168,58,58,0.22)',
+    borderWidth: 1,
+    borderColor: Theme.colors.imperialRed,
+    ...Theme.shadows.redGlow,
+  },
+  coupForcedText: {
+    color: '#FFD4D4',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 2,
   },
   chooseHint: {
     color: Theme.colors.imperialRed,

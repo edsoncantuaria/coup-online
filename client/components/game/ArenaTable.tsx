@@ -22,13 +22,41 @@ interface PlayerNodeProps {
   };
   isActing?: boolean;
   isWaiting?: boolean;
+  isTargeted?: boolean;
   onLongPress?: () => void;
 }
 
-const PlayerNode = ({ player, isActing, isWaiting, onLongPress }: PlayerNodeProps) => {
+/**
+ * Glifos minimalistas para a carta revelada — estilo AAA/heráldica,
+ * usando símbolos Unicode já acessíveis em todas as fontes do sistema.
+ */
+const ROLE_GLYPH: Record<string, string> = {
+  duke: '♛',
+  captain: '⚔',
+  assassin: '✦',
+  ambassador: '✉',
+  contessa: '✿',
+};
+
+const ROLE_TINT: Record<string, string> = {
+  duke: '#E7B197',
+  captain: '#8FB8D8',
+  assassin: '#B39AD9',
+  ambassador: '#F2D68A',
+  contessa: '#DCD4E6',
+};
+
+const PlayerNode = ({
+  player,
+  isActing,
+  isWaiting,
+  isTargeted,
+  onLongPress,
+}: PlayerNodeProps) => {
   const isDead = player.cards && player.cards.every((c) => c.isFlipped);
   const glow = useSharedValue(0);
   const pulse = useSharedValue(0);
+  const targetPulse = useSharedValue(0);
 
   useEffect(() => {
     if (isActing) {
@@ -54,20 +82,47 @@ const PlayerNode = ({ player, isActing, isWaiting, onLongPress }: PlayerNodeProp
     }
   }, [isWaiting]);
 
-  const ringStyle = useAnimatedStyle(() => ({
-    borderColor: isWaiting
-      ? interpolateColor(pulse.value, [0, 1], [
-          Theme.colors.imperialRedDeep,
-          Theme.colors.imperialRed,
-        ])
-      : interpolateColor(glow.value, [0, 1], [
-          'rgba(45, 51, 59, 0.9)',
-          Theme.colors.gold,
-        ]),
-    shadowColor: isWaiting ? Theme.colors.imperialRed : Theme.colors.gold,
-    shadowOpacity: (isWaiting ? pulse.value : glow.value) * 0.9,
-    shadowRadius: (isWaiting ? pulse.value : glow.value) * 14,
-  }));
+  useEffect(() => {
+    if (isTargeted && !isDead) {
+      targetPulse.value = withRepeat(
+        withTiming(1, { duration: 700, easing: Easing.inOut(Easing.quad) }),
+        -1,
+        true
+      );
+    } else {
+      targetPulse.value = withTiming(0, { duration: 300 });
+    }
+  }, [isTargeted, isDead]);
+
+  const ringStyle = useAnimatedStyle(() => {
+    // Prioridade visual: alvo > aguardando resposta > atuando > normal
+    if (isTargeted && !isDead) {
+      return {
+        borderColor: interpolateColor(
+          targetPulse.value,
+          [0, 1],
+          [Theme.colors.imperialRedDeep, '#FF5A5A']
+        ),
+        shadowColor: Theme.colors.imperialRed,
+        shadowOpacity: 0.5 + targetPulse.value * 0.5,
+        shadowRadius: 10 + targetPulse.value * 16,
+      };
+    }
+    return {
+      borderColor: isWaiting
+        ? interpolateColor(pulse.value, [0, 1], [
+            Theme.colors.imperialRedDeep,
+            Theme.colors.imperialRed,
+          ])
+        : interpolateColor(glow.value, [0, 1], [
+            'rgba(45, 51, 59, 0.9)',
+            Theme.colors.gold,
+          ]),
+      shadowColor: isWaiting ? Theme.colors.imperialRed : Theme.colors.gold,
+      shadowOpacity: (isWaiting ? pulse.value : glow.value) * 0.9,
+      shadowRadius: (isWaiting ? pulse.value : glow.value) * 14,
+    };
+  });
 
   return (
     <Pressable
@@ -80,9 +135,14 @@ const PlayerNode = ({ player, isActing, isWaiting, onLongPress }: PlayerNodeProp
         <View style={styles.avatar}>
           <Text style={styles.avatarLetter}>{player.name[0]?.toUpperCase()}</Text>
         </View>
-        {isActing && !isDead && (
+        {isActing && !isDead && !isTargeted && (
           <View style={styles.actingPill}>
             <Text style={styles.actingPillText}>TURNO</Text>
+          </View>
+        )}
+        {isTargeted && !isDead && (
+          <View style={styles.targetPill}>
+            <Text style={styles.targetPillText}>ALVO</Text>
           </View>
         )}
       </Animated.View>
@@ -107,7 +167,14 @@ const PlayerNode = ({ player, isActing, isWaiting, onLongPress }: PlayerNodeProp
             ]}
           >
             {c.isFlipped ? (
-              <Text style={styles.miniCardX}>×</Text>
+              <Text
+                style={[
+                  styles.miniCardGlyph,
+                  { color: ROLE_TINT[c.role] || Theme.colors.imperialRed },
+                ]}
+              >
+                {ROLE_GLYPH[c.role] || '×'}
+              </Text>
             ) : (
               <View style={styles.miniCardInner} />
             )}
@@ -122,6 +189,7 @@ interface ArenaTableProps {
   players: any[];
   currentPlayerId: string | null;
   waitingForResponseId: string | null;
+  targetId?: string | null;
   statusTitle?: string;
   statusSubtitle?: string;
   statusKind?: 'idle' | 'action' | 'challenge' | 'block' | 'losing' | 'exchange' | 'over' | 'lobby';
@@ -149,6 +217,7 @@ export default function ArenaTable({
   players,
   currentPlayerId,
   waitingForResponseId,
+  targetId,
   statusTitle,
   statusSubtitle,
   statusKind,
@@ -297,6 +366,7 @@ export default function ArenaTable({
             player={p}
             isActing={currentPlayerId === p.id}
             isWaiting={waitingForResponseId === p.id}
+            isTargeted={targetId === p.id}
             onLongPress={onPlayerLongPress ? () => onPlayerLongPress(p) : undefined}
           />
         </View>
@@ -485,6 +555,22 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 1,
   },
+  targetPill: {
+    position: 'absolute',
+    bottom: -9,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: Theme.colors.imperialRed,
+    borderWidth: 1.5,
+    borderColor: Theme.colors.background,
+  },
+  targetPillText: {
+    color: '#FFF',
+    fontSize: 7,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
   playerName: {
     marginTop: 12,
     color: Theme.colors.text,
@@ -530,10 +616,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(110, 31, 31, 0.35)',
     borderColor: 'rgba(168, 58, 58, 0.5)',
   },
-  miniCardX: {
-    color: Theme.colors.imperialRed,
-    fontSize: 14,
+  miniCardGlyph: {
+    fontSize: 11,
     fontWeight: '900',
-    lineHeight: 15,
+    lineHeight: 13,
+    textShadowColor: 'rgba(0,0,0,0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
 });
