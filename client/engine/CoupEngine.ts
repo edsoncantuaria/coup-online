@@ -78,13 +78,26 @@ export class CoupEngine {
     return player;
   }
 
+  public allLogs: string[] = [];
+
   public getState(): GameState {
     return this.state;
   }
 
   private addLog(message: string) {
-    this.state.logs.push(message);
+    const timestamp = new Date().toISOString();
+    const logEntry = `[${timestamp}] ${message}`;
+    
+    this.state.logs.push(message); // UI: visível a todos os jogadores
     if (this.state.logs.length > 50) this.state.logs.shift();
+    
+    this.allLogs.push(logEntry);
+  }
+
+  // Debug-only: vai apenas para o arquivo de simulação, NUNCA para a UI
+  private addDebugLog(message: string) {
+    const timestamp = new Date().toISOString();
+    this.allLogs.push(`[${timestamp}] ${message}`);
   }
 
   private translateAction(type: string): string {
@@ -107,6 +120,8 @@ export class CoupEngine {
     if (playerId !== this.getCurrentPlayer().id) return;
     
     this.state.currentAction = action;
+    this.state.pendingBlock = undefined; // Garante que nenhum bloqueio anterior vaze
+    this.state.responses = {};
     const player = this.state.players.find(p => p.id === playerId);
     if (!player) return;
 
@@ -166,12 +181,18 @@ export class CoupEngine {
       if (this.state.phase === 'challenge') {
         skipThisPlayer = p.id === this.state.currentAction?.source;
       } else if (this.state.phase === 'block') {
-        const action = this.state.currentAction;
-        if (action?.type === 'foreign_aid') {
-          skipThisPlayer = p.id === action.source; // Quem pediu ajuda não bloqueia a si mesmo
+        if (this.state.pendingBlock) {
+          // Estamos aguardando desafios a um bloqueio! Todos menos o bloqueador podem desafiar.
+          skipThisPlayer = p.id === this.state.pendingBlock.blockerId;
         } else {
-          // Ações direcionadas: Apenas o alvo pode bloquear
-          skipThisPlayer = p.id !== action?.target;
+          // Estamos aguardando bloqueios à ação!
+          const action = this.state.currentAction;
+          if (action?.type === 'foreign_aid') {
+            skipThisPlayer = p.id === action.source; // Quem pediu ajuda não bloqueia a si mesmo
+          } else {
+            // Ações direcionadas: Apenas o alvo pode bloquear
+            skipThisPlayer = p.id !== action?.target;
+          }
         }
       }
 
@@ -214,6 +235,7 @@ export class CoupEngine {
       if (this.state.pendingBlock) {
         // Alguém bloqueou e ninguém desafiou o bloqueio. A ação falha.
         this.addLog(`🚫 O bloqueio de ${this.getPlayerName(this.state.pendingBlock.blockerId)} foi aceito e a ação não surtirá efeito.`);
+        this.state.currentAction = null;
         this.state.pendingBlock = null;
         this.nextTurn();
       } else {
@@ -245,7 +267,7 @@ export class CoupEngine {
     }
 
     if (response === 'block') {
-      if (this.state.phase as string !== 'block') {
+      if (this.state.phase as string !== 'block' || this.state.pendingBlock) {
         this.addLog(`🚫 Tentativa de bloqueio fora de hora por ${expectedPlayer.name}.`);
         return;
       }
@@ -408,7 +430,7 @@ export class CoupEngine {
         } else {
           this.nextTurn();
         }
-        break;
+        return; // Usa return para não cair no nextTurn() abaixo
       case 'coup':
         if (action.target) {
           const pending = this.loseInfluence(action.target, 'next_turn');
@@ -416,7 +438,7 @@ export class CoupEngine {
         } else {
           this.nextTurn();
         }
-        break;
+        return; // Usa return para não cair no nextTurn() abaixo
       case 'exchange':
         this.handleExchange(source);
         return;
@@ -441,8 +463,19 @@ export class CoupEngine {
     this.state.phase = 'action';
     this.state.waitingForResponseIndex = null;
     this.state.currentAction = null;
+    this.state.pendingBlock = undefined;
     this.state.responses = {};
-    this.addLog(`📍 Turno de ${this.getCurrentPlayer().name}`);
+    const cp = this.getCurrentPlayer();
+    // Log público (UI): mostra apenas quem é o jogador atual
+    this.addLog(`📍 Turno de ${cp.name}`);
+    // Log de debug (simulação/arquivo): mostra mão completa + moedas de todos
+    const allStates = this.state.players
+      .map(p => {
+        const hand = p.cards.map(c => c.isFlipped ? `[${this.translateRole(c.role)} ☠]` : `[${this.translateRole(c.role)}]`).join(', ');
+        return `${p.name}: 💰${p.coins} ${hand}`;
+      })
+      .join(' | ');
+    this.addDebugLog(`📍 [DEBUG] Turno de ${cp.name} | Estado: ${allStates}`);
   }
 
   private checkWinner(): boolean {
@@ -489,7 +522,8 @@ export class CoupEngine {
       this.state.losingInfluenceId = playerId;
       this.state.waitingForResponseIndex = this.state.players.findIndex(p => p.id === playerId);
       this.state.pendingResolution = { type: nextAction };
-      this.addLog(`🤔 ${player.name} deve escolher qual influência perder.`);
+      const reasonLog = nextAction === 'resolve_action' ? '(ação ainda prosseguirá após escolha)' : '';
+      this.addLog(`🤔 ${player.name} deve escolher qual influência perder. ${reasonLog}`);
       return true;
     }
   }
@@ -515,6 +549,8 @@ export class CoupEngine {
       this.state.waitingForResponseIndex = null;
 
       this.checkWinner();
+
+      if ((this.state.phase as string) === 'game_over') return;
 
       if (resolution === 'resolve_action') {
         this.resolveAction();
@@ -547,7 +583,10 @@ export class CoupEngine {
 
     // Devolve as outras para o deck
     const toReturn = currentAndDrew.filter(role => !keptRoles.includes(role));
-    this.addLog(`⚙️ Devolvendo ${toReturn.length} cartas ao deck: ${toReturn.map(r => this.translateRole(r)).join(', ')}.`);
+    const toReturnStr = toReturn.length > 0
+      ? toReturn.map(r => this.translateRole(r)).join(', ')
+      : 'nenhuma';
+    this.addLog(`⚙️ Devolvendo ${toReturn.length} cartas ao deck: ${toReturnStr}.`);
     this.state.deck.push(...toReturn);
     this.state.deck = this.shuffleDeck(this.state.deck);
     this.addLog("⚙️ Deck re-embaralhado após troca.");

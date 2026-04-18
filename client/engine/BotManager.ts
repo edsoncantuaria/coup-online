@@ -47,11 +47,11 @@ export class BotManager {
 
     if (state.phase === 'block') {
       if (state.pendingBlock) {
-        // Someone blocked, decide whether to challenge the block
-        if (rand < 0.1) return { type: 'challenge' };
+        // Alguém bloqueou: decidir se desafia o bloqueio (cobertura aumentada para 40%)
+        if (rand < 0.4) return { type: 'challenge' };
         return { type: 'pass' };
       } else {
-        // No one blocked yet, decide whether to block
+        // Ninguém bloqueou ainda: decisão de bloquear
         const isTarget = action.target === botId;
         const canBlock = (action.type === 'foreign_aid') || 
                          (action.type === 'steal' && isTarget) || 
@@ -69,7 +69,8 @@ export class BotManager {
     }
 
     if (state.phase === 'challenge') {
-      if (rand < 0.15 && ['tax', 'steal', 'assassinate'].includes(action.type)) {
+      // Desafiar ações claimadas (cobertura aumentada para 35%)
+      if (rand < 0.35 && ['tax', 'steal', 'assassinate', 'exchange'].includes(action.type)) {
         return { type: 'challenge' };
       }
       return { type: 'pass' };

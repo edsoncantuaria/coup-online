@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Easing } from 'react-native';
 import { X, Skull } from 'lucide-react-native';
 import { useGameState } from '../hooks/useGameState';
 import { translateRole } from '../utils/translations';
@@ -12,18 +12,54 @@ interface GraveyardViewProps {
 export default function GraveyardView({ visible, onClose }: GraveyardViewProps) {
   const getGraveyardStats = useGameState(state => state.getGraveyardStats);
 
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 400,
+          easing: Easing.out(Easing.exp),
+          useNativeDriver: true,
+        })
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(opacityAnim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 50,
+          duration: 250,
+          useNativeDriver: true,
+        })
+      ]).start();
+    }
+  }, [visible]);
+
   if (!visible) return null;
 
   const stats = getGraveyardStats();
 
   return (
     <View style={styles.overlay}>
-      <View style={styles.alertBox}>
-        <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-          <X color="#8B0000" size={24} />
+      <Animated.View style={[styles.alertBox, { opacity: opacityAnim, transform: [{ translateY: slideAnim }] }]}>
+        <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.7}>
+          <X color="#A1ADC1" size={24} />
         </TouchableOpacity>
 
-        <Skull color="#8B0000" size={32} style={{ marginBottom: 10 }} />
+        <View style={styles.iconWrapper}>
+          <Skull color="#D4AF37" size={36} strokeWidth={1.5} />
+        </View>
         <Text style={styles.alertTitle}>CRIPTA REAL</Text>
         <Text style={styles.alertDesc}>Acompanhe as influências que já tombaram em batalha e tente adivinhar as verdades ocultas.</Text>
         
@@ -37,18 +73,18 @@ export default function GraveyardView({ visible, onClose }: GraveyardViewProps) 
                <View style={styles.countsBox}>
                   <View style={styles.countItem}>
                      <Text style={styles.countLabel}>MORTOS</Text>
-                     <Text style={[styles.countValue, { color: '#8B0000' }]}>{stat.dead}</Text>
+                     <Text style={[styles.countValue, { color: '#8E1616' }]}>{stat.dead}</Text>
                   </View>
                   <View style={styles.countSeparator} />
                   <View style={styles.countItem}>
                      <Text style={styles.countLabel}>VIVOS</Text>
-                     <Text style={[styles.countValue, { color: '#2F4F4F' }]}>{stat.remaining}</Text>
+                     <Text style={[styles.countValue, { color: '#D4AF37' }]}>{stat.remaining}</Text>
                   </View>
                </View>
             </View>
           ))}
         </ScrollView>
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -60,78 +96,109 @@ const styles = StyleSheet.create({
     alignItems: 'center', 
     justifyContent: 'center', 
     padding: 25, 
-    zIndex: 3000 // Very high z-index to stay on top
+    zIndex: 3000 
   },
   alertBox: { 
-    backgroundColor: '#F4E7D3', 
+    backgroundColor: '#151A1F', 
     width: '100%', 
     maxWidth: 500, 
-    padding: 25, 
-    borderRadius: 30, 
-    borderWidth: 4, 
+    padding: 30, 
+    borderRadius: 20, 
+    borderWidth: 2, 
     borderColor: '#D4AF37', 
     alignItems: 'center',
-    paddingTop: 30
+    paddingTop: 40,
+    shadowColor: '#D4AF37',
+    shadowOpacity: 0.15,
+    shadowRadius: 30,
+    elevation: 15
   },
   closeBtn: {
     position: 'absolute',
     top: 20,
     right: 20,
     padding: 5,
-    zIndex: 10
+    zIndex: 10,
+    backgroundColor: '#1A1F24',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#30363D',
   },
-  alertTitle: { fontSize: 24, fontWeight: '900', color: '#8B0000', marginBottom: 5, textAlign: 'center', letterSpacing: 1 },
-  alertDesc: { fontSize: 13, color: '#5C4033', textAlign: 'center', marginBottom: 20, fontStyle: 'italic' },
+  iconWrapper: {
+    marginBottom: 15,
+    padding: 15,
+    backgroundColor: 'rgba(212, 175, 55, 0.1)',
+    borderRadius: 40,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 175, 55, 0.3)',
+  },
+  alertTitle: { 
+    fontSize: 22, 
+    fontWeight: '900', 
+    color: '#D4AF37', 
+    marginBottom: 8, 
+    textAlign: 'center', 
+    letterSpacing: 2 
+  },
+  alertDesc: { 
+    fontSize: 12, 
+    color: '#A1ADC1', 
+    textAlign: 'center', 
+    marginBottom: 25, 
+    fontStyle: 'italic',
+    lineHeight: 18,
+  },
   statRow: {
     width: '100%',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.7)',
-    padding: 15,
-    borderRadius: 15,
-    marginBottom: 10,
-    borderWidth: 2,
-    borderColor: 'rgba(212, 175, 55, 0.4)'
+    backgroundColor: '#1A1F24',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#30363D'
   },
   roleInfo: {
      flex: 1
   },
   roleName: {
-     color: '#5C4033',
-     fontSize: 16,
+     color: '#EADDCA',
+     fontSize: 15,
      fontWeight: '900',
-     letterSpacing: 0.5
+     letterSpacing: 1
   },
   countsBox: {
      flexDirection: 'row',
      alignItems: 'center',
-     gap: 12,
-     backgroundColor: '#FFF',
-     paddingHorizontal: 12,
-     paddingVertical: 8,
-     borderRadius: 10,
+     gap: 15,
+     backgroundColor: '#0F1318',
+     paddingHorizontal: 16,
+     paddingVertical: 10,
+     borderRadius: 8,
      borderWidth: 1,
-     borderColor: 'rgba(212, 175, 55, 0.2)'
+     borderColor: '#2D333B'
   },
   countSeparator: {
       width: 1,
       height: '100%',
-      backgroundColor: 'rgba(212, 175, 55, 0.3)',
-      marginHorizontal: 2
+      backgroundColor: '#30363D',
+      marginHorizontal: 5
   },
   countItem: {
      alignItems: 'center',
-     minWidth: 45
+     minWidth: 50
   },
   countLabel: {
      fontSize: 9,
      fontWeight: '900',
-     color: '#A0A0A0',
-     marginBottom: 2
+     color: '#A1ADC1',
+     marginBottom: 4,
+     letterSpacing: 1
   },
   countValue: {
-     fontSize: 18,
+     fontSize: 20,
      fontWeight: '900'
   }
 });
