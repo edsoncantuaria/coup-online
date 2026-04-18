@@ -7,9 +7,13 @@ import Animated, {
   withRepeat,
   withTiming,
   Easing,
+  FadeIn,
+  FadeOut,
+  ZoomIn,
 } from 'react-native-reanimated';
 import Card from '../Card';
 import { Theme } from '../../constants/Theme';
+import CoinDelta from './CoinDelta';
 
 interface PlayerHUDProps {
   me: any;
@@ -60,6 +64,7 @@ export default function PlayerHUD({
           <Coins color={Theme.colors.gold} size={18} />
           <Text style={styles.coinText}>{me.coins}</Text>
           <Text style={styles.coinLabel}>MOEDAS</Text>
+          <CoinDelta coins={me.coins} />
         </View>
 
         <Animated.View
@@ -102,30 +107,38 @@ export default function PlayerHUD({
           {me.cards?.map((card: any, i: number) => {
             const disabled = !choosing || card.isFlipped;
             const isFirst = i === 0;
+            // Key inclui role+isFlipped: quando o engine substitui a carta
+            // provada, a key muda, forçando remontagem + animação de entrada.
+            const slotKey = `slot-${i}-${card.role}-${card.isFlipped ? 'x' : 'o'}`;
             return (
-              <TouchableOpacity
-                key={i}
-                disabled={disabled}
-                onPress={() => onSelectInfluence(card.role)}
-                activeOpacity={0.75}
+              <Animated.View
+                key={slotKey}
+                entering={ZoomIn.duration(360)}
+                exiting={FadeOut.duration(200)}
                 style={[
                   styles.cardWrapper,
                   isFirst
                     ? { transform: [{ rotate: '-3deg' }] }
                     : { transform: [{ rotate: '3deg' }], marginLeft: 10 },
                 ]}
-                hitSlop={8}
               >
-                <Card
-                  role={card.role}
-                  isFlipped
-                  isDead={card.isFlipped}
-                  style={[
-                    styles.customCard,
-                    choosing && !card.isFlipped && styles.selectableCard,
-                  ]}
-                />
-              </TouchableOpacity>
+                <TouchableOpacity
+                  disabled={disabled}
+                  onPress={() => onSelectInfluence(card.role)}
+                  activeOpacity={0.75}
+                  hitSlop={8}
+                >
+                  <Card
+                    role={card.role}
+                    isFlipped
+                    isDead={card.isFlipped}
+                    style={[
+                      styles.customCard,
+                      choosing && !card.isFlipped && styles.selectableCard,
+                    ]}
+                  />
+                </TouchableOpacity>
+              </Animated.View>
             );
           })}
         </View>

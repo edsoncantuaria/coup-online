@@ -17,9 +17,16 @@ interface ActionPanelProps {
   onAction: (type: string) => void;
   coins: number;
   disabledActions?: boolean;
+  /** Nº de oponentes vivos - usado para preview de risco */
+  aliveOpponents?: number;
 }
 
-export default function ActionPanel({ onAction, coins, disabledActions }: ActionPanelProps) {
+export default function ActionPanel({
+  onAction,
+  coins,
+  disabledActions,
+  aliveOpponents = 0,
+}: ActionPanelProps) {
   const basicActions = [
     {
       id: 'income',
@@ -80,6 +87,29 @@ export default function ActionPanel({ onAction, coins, disabledActions }: Action
     coins < cost ||
     (coins >= 10 && id !== 'coup');
 
+  // Preview de risco: quem pode contestar/bloquear
+  const plural = (n: number, one: string, many: string) =>
+    n === 1 ? one : many;
+  const riskByAction: Record<string, string | undefined> = {
+    income: undefined,
+    foreign_aid: aliveOpponents
+      ? `${aliveOpponents} pode${aliveOpponents > 1 ? 'm' : ''} bloquear (Duque)`
+      : undefined,
+    coup: undefined,
+    tax: aliveOpponents
+      ? `${aliveOpponents} ${plural(aliveOpponents, 'pode contestar', 'podem contestar')}`
+      : undefined,
+    assassinate: aliveOpponents
+      ? `Contestável · bloqueio de Condessa`
+      : undefined,
+    steal: aliveOpponents
+      ? `Contestável · alvo bloqueia c/ Capitão/Embaix.`
+      : undefined,
+    exchange: aliveOpponents
+      ? `${aliveOpponents} ${plural(aliveOpponents, 'pode contestar', 'podem contestar')}`
+      : undefined,
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.headerBox}>
@@ -107,6 +137,7 @@ export default function ActionPanel({ onAction, coins, disabledActions }: Action
               icon={a.icon}
               description={a.description}
               cost={a.cost}
+              risk={riskByAction[a.id]}
               onPress={() => onAction(a.id)}
               disabled={isDisabled(a.cost, a.id)}
               variant="basic"
@@ -128,6 +159,7 @@ export default function ActionPanel({ onAction, coins, disabledActions }: Action
               icon={a.icon}
               roleLabel={a.roleLabel}
               cost={a.cost}
+              risk={riskByAction[a.id]}
               onPress={() => onAction(a.id)}
               disabled={isDisabled(a.cost, a.id)}
               variant="character"

@@ -51,4 +51,12 @@ export interface GameState {
   pendingResolution?: {
     type: 'next_turn' | 'resolve_action' | 'action_fail' | 'allow_block' | 'reopen_block';
   };
+  /** Último veredito de desafio para exibir reveal central na UI */
+  lastReveal?: {
+    role: Role;
+    playerName: string;
+    playerId: string;
+    verdict: 'proven' | 'bluff';
+    stamp: number;
+  };
 }

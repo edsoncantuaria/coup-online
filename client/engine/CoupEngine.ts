@@ -337,13 +337,24 @@ export class CoupEngine {
 
     if (hasCard) {
       this.addLog(`✅ ${targetPlayer.name} PROVOU ser ${this.translateRole(actionRole)}!`);
-      
-      // Substitui a carta provada
+      this.state.lastReveal = {
+        role: actionRole,
+        playerName: targetPlayer.name,
+        playerId: targetPlayer.id,
+        verdict: 'proven',
+        stamp: Date.now(),
+      };
+
+      // Substitui a carta provada MANTENDO A POSIÇÃO da mão,
+      // para o jogador acompanhar visualmente a troca sem reordenar cartas.
       const cardIndex = targetPlayer.cards.findIndex(c => c.role === actionRole && !c.isFlipped);
-      const [card] = targetPlayer.cards.splice(cardIndex, 1);
-      this.state.deck.push(card.role);
+      const oldRole = targetPlayer.cards[cardIndex].role;
+      this.state.deck.push(oldRole);
       this.state.deck = this.shuffleDeck(this.state.deck);
-      targetPlayer.cards.push({ role: this.state.deck.pop() as Role, isFlipped: false });
+      targetPlayer.cards[cardIndex] = {
+        role: this.state.deck.pop() as Role,
+        isFlipped: false,
+      };
 
       if (isChallengingBlock) {
         // Bloqueio legítimo: Ação original é abortada
@@ -367,7 +378,14 @@ export class CoupEngine {
       }
     } else {
       this.addLog(`❗ ${targetPlayer.name} estava blefando!`);
-      
+      this.state.lastReveal = {
+        role: actionRole,
+        playerName: targetPlayer.name,
+        playerId: targetPlayer.id,
+        verdict: 'bluff',
+        stamp: Date.now(),
+      };
+
       if (isChallengingBlock) {
         // Bloqueio falso: A ação original prossegue
         this.state.phase = 'action'; 

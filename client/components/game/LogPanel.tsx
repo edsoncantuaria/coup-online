@@ -28,12 +28,29 @@ type LogKind = 'neutral' | 'bluff' | 'success' | 'failure' | 'info' | 'turn';
 
 interface LogEntry {
   text: string;
+  displayText: string;
   kind: LogKind;
   index: number;
   round: number;
 }
 
+// Normaliza linhas do engine: remove emojis decorativos mas usa-os como
+// primeira pista para classificar o evento.
+function stripEmojis(text: string): string {
+  return text
+    .replace(/[\u2705\u274C\u2757\u2728\u2694\u2660\u2663\u2665\u2666]/g, '')
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function classifyLog(text: string): LogKind {
+  // Prioriza emojis (sinais explícitos do engine)
+  if (text.includes('✅') || text.includes('🛡️')) return 'success';
+  if (text.includes('❗') || text.includes('❌')) return 'failure';
+  if (text.includes('⚔️')) return 'bluff';
+  if (text.includes('✨')) return 'info';
+
   const lower = text.toLowerCase();
   if (lower.includes('turno de')) return 'turn';
   if (
@@ -66,6 +83,15 @@ function classifyLog(text: string): LogKind {
   }
   return 'neutral';
 }
+
+const KIND_LABEL: Record<LogKind, string> = {
+  neutral: '·',
+  bluff: 'DESAFIO',
+  success: 'PROVA',
+  failure: 'QUEDA',
+  info: 'RESOLV.',
+  turn: 'TURNO',
+};
 
 const KIND_STYLES: Record<
   LogKind,
@@ -139,6 +165,7 @@ export default function LogPanel({ logs }: LogPanelProps) {
     let playersThisRound = new Set<string>();
     const out: LogEntry[] = logs.map((text, i) => {
       const kind = classifyLog(text);
+      const displayText = stripEmojis(text);
       const turnName = parseTurnPlayer(text);
       if (turnName) {
         if (playersThisRound.has(turnName)) {
@@ -147,7 +174,7 @@ export default function LogPanel({ logs }: LogPanelProps) {
         }
         playersThisRound.add(turnName);
       }
-      return { text, kind, index: i, round };
+      return { text, displayText, kind, index: i, round };
     });
     return { entries: out, currentRound: round };
   }, [logs]);
@@ -266,6 +293,18 @@ export default function LogPanel({ logs }: LogPanelProps) {
                         },
                       ]}
                     >
+                      {entry.kind !== 'neutral' && (
+                        <View
+                          style={[
+                            styles.kindBadge,
+                            { borderColor: style.bar },
+                          ]}
+                        >
+                          <Text style={[styles.kindBadgeText, { color: style.color }]}>
+                            {KIND_LABEL[entry.kind]}
+                          </Text>
+                        </View>
+                      )}
                       <Text
                         style={[
                           styles.logText,
@@ -273,7 +312,7 @@ export default function LogPanel({ logs }: LogPanelProps) {
                           entry.kind === 'turn' && { fontWeight: '900' },
                         ]}
                       >
-                        {entry.text}
+                        {entry.displayText}
                       </Text>
                     </Animated.View>
                   );
@@ -451,5 +490,19 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     fontWeight: '600',
     letterSpacing: 0.3,
+  },
+  kindBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 3,
+    borderWidth: 1,
+    marginBottom: 3,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+  },
+  kindBadgeText: {
+    fontSize: 7.5,
+    fontWeight: '900',
+    letterSpacing: 1.6,
   },
 });

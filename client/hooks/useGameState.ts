@@ -21,6 +21,13 @@ interface GameState {
   localEngine: CoupEngine | null;
   currentAction: any;
   pendingBlock: any;
+  lastReveal: {
+    role: string;
+    playerName: string;
+    playerId: string;
+    verdict: 'proven' | 'bluff';
+    stamp: number;
+  } | null;
 
   // Transições e timers
   transitioning: boolean;
@@ -62,6 +69,7 @@ export const useGameState = create<GameState>((set, get) => ({
   localEngine: null,
   currentAction: null,
   pendingBlock: null,
+  lastReveal: null,
 
   transitioning: false,
   turnTimer: null,
@@ -103,6 +111,7 @@ export const useGameState = create<GameState>((set, get) => ({
       losingInfluenceId: null,
       currentAction: null,
       pendingBlock: null,
+      lastReveal: null,
       transitioning: false,
       turnTimer: null,
       logs: ['Modo Offline iniciado.'],
@@ -184,6 +193,9 @@ export const useGameState = create<GameState>((set, get) => ({
       losingInfluenceId: (state as any).losingInfluenceId || null,
       currentAction: state.currentAction ? { ...state.currentAction } : null,
       pendingBlock: state.pendingBlock ? { ...state.pendingBlock } : null,
+      lastReveal: (state as any).lastReveal
+        ? { ...(state as any).lastReveal }
+        : null,
       transitioning: true,
       turnTimer: null,
     });

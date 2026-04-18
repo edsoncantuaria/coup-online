@@ -29,11 +29,15 @@ import {
   Shield,
   Sparkles,
   DoorOpen,
+  Volume2,
+  VolumeX,
 } from 'lucide-react-native';
 import { useGameState } from '../hooks/useGameState';
 import CourtAlert from '../components/CourtAlert';
 import RulesView from '../components/RulesView';
 import { Theme } from '../constants/Theme';
+import { storage } from '../utils/storage';
+import { setMuted as setSoundMuted } from '../utils/sound';
 
 export default function LobbyScreen() {
   const insets = useSafeAreaInsets();
@@ -41,7 +45,33 @@ export default function LobbyScreen() {
   const [name, setName] = useState('Nobre da Corte');
   const [room, setRoom] = useState('');
   const [showRules, setShowRules] = useState(false);
+  const [muted, setMuted] = useState(false);
   const { joinRoom, startOfflineGame } = useGameState();
+
+  // Carrega preferências persistidas
+  useEffect(() => {
+    (async () => {
+      const saved = await storage.getPlayerName();
+      if (saved && saved.trim()) setName(saved);
+      const m = await storage.getMuted();
+      setMuted(m);
+      setSoundMuted(m);
+    })();
+  }, []);
+
+  // Persiste o nome ao alterar (debounced simples via effect)
+  useEffect(() => {
+    if (!name.trim()) return;
+    const t = setTimeout(() => storage.setPlayerName(name.trim()), 350);
+    return () => clearTimeout(t);
+  }, [name]);
+
+  const toggleMute = () => {
+    const next = !muted;
+    setMuted(next);
+    setSoundMuted(next);
+    storage.setMuted(next);
+  };
 
   const [alertConfig, setAlertConfig] = useState<{
     visible: boolean;
@@ -181,6 +211,23 @@ export default function LobbyScreen() {
             >
               <BookOpen color={Theme.colors.gold} size={13} />
               <Text style={styles.ghostBtnText}>COMPÊNDIO DA CORTE</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.ghostBtn,
+                pressed && { opacity: 0.8 },
+              ]}
+              onPress={toggleMute}
+              accessibilityLabel={muted ? 'Desmutar' : 'Mutar'}
+            >
+              {muted ? (
+                <VolumeX color={Theme.colors.gold} size={13} />
+              ) : (
+                <Volume2 color={Theme.colors.gold} size={13} />
+              )}
+              <Text style={styles.ghostBtnText}>
+                {muted ? 'SILENCIADO' : 'SONS ATIVOS'}
+              </Text>
             </Pressable>
           </View>
         </Animated.View>

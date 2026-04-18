@@ -11,6 +11,7 @@ interface ActionButtonProps {
   roleLabel?: string;
   cost?: number;
   variant?: 'basic' | 'character';
+  risk?: string;
   onPress: () => void;
   disabled?: boolean;
 }
@@ -22,6 +23,7 @@ export default function ActionButton({
   roleLabel,
   cost,
   variant = 'basic',
+  risk,
   onPress,
   disabled,
 }: ActionButtonProps) {
@@ -88,6 +90,11 @@ export default function ActionButton({
               {roleLabel ?? description}
             </Text>
           )}
+          {!!risk && !disabled && (
+            <Text style={styles.risk} numberOfLines={1}>
+              {risk}
+            </Text>
+          )}
         </View>
 
         {cost !== undefined && cost > 0 ? (
@@ -146,6 +153,14 @@ const styles = StyleSheet.create({
   },
   disabledText: {
     color: Theme.colors.textMuted,
+  },
+  risk: {
+    color: Theme.colors.imperialRed,
+    fontSize: 8.5,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    marginTop: 2,
+    opacity: 0.85,
   },
   costBadge: {
     paddingHorizontal: 6,

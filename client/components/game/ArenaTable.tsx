@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle, Pressable } from 'react-native';
 import { Coins } from 'lucide-react-native';
 import Animated, {
   useSharedValue,
@@ -11,6 +11,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Theme } from '../../constants/Theme';
+import CoinDelta from './CoinDelta';
 
 interface PlayerNodeProps {
   player: {
@@ -21,9 +22,10 @@ interface PlayerNodeProps {
   };
   isActing?: boolean;
   isWaiting?: boolean;
+  onLongPress?: () => void;
 }
 
-const PlayerNode = ({ player, isActing, isWaiting }: PlayerNodeProps) => {
+const PlayerNode = ({ player, isActing, isWaiting, onLongPress }: PlayerNodeProps) => {
   const isDead = player.cards && player.cards.every((c) => c.isFlipped);
   const glow = useSharedValue(0);
   const pulse = useSharedValue(0);
@@ -68,7 +70,12 @@ const PlayerNode = ({ player, isActing, isWaiting }: PlayerNodeProps) => {
   }));
 
   return (
-    <View style={styles.nodeWrapper}>
+    <Pressable
+      style={styles.nodeWrapper}
+      onLongPress={onLongPress}
+      delayLongPress={320}
+      hitSlop={4}
+    >
       <Animated.View style={[styles.avatarRing, ringStyle, isDead && styles.deadRing]}>
         <View style={styles.avatar}>
           <Text style={styles.avatarLetter}>{player.name[0]?.toUpperCase()}</Text>
@@ -88,6 +95,7 @@ const PlayerNode = ({ player, isActing, isWaiting }: PlayerNodeProps) => {
         <Coins color={Theme.colors.gold} size={11} />
         <Text style={styles.coins}>{player.coins}</Text>
       </View>
+      <CoinDelta coins={player.coins} />
 
       <View style={styles.cardsRow}>
         {player.cards?.map((c, i) => (
@@ -106,7 +114,7 @@ const PlayerNode = ({ player, isActing, isWaiting }: PlayerNodeProps) => {
           </View>
         ))}
       </View>
-    </View>
+    </Pressable>
   );
 };
 
@@ -119,6 +127,7 @@ interface ArenaTableProps {
   statusKind?: 'idle' | 'action' | 'challenge' | 'block' | 'losing' | 'exchange' | 'over' | 'lobby';
   turnTimer?: number | null;
   transitioning?: boolean;
+  onPlayerLongPress?: (player: any) => void;
 }
 
 const kindColor = (kind?: string): string => {
@@ -145,6 +154,7 @@ export default function ArenaTable({
   statusKind,
   turnTimer,
   transitioning,
+  onPlayerLongPress,
 }: ArenaTableProps) {
   const accent = kindColor(statusKind);
   const statusPulse = useSharedValue(0);
@@ -287,6 +297,7 @@ export default function ArenaTable({
             player={p}
             isActing={currentPlayerId === p.id}
             isWaiting={waitingForResponseId === p.id}
+            onLongPress={onPlayerLongPress ? () => onPlayerLongPress(p) : undefined}
           />
         </View>
       ))}

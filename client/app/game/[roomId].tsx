@@ -32,7 +32,17 @@ import ActionPanel from '../../components/game/ActionPanel';
 import LogPanel from '../../components/game/LogPanel';
 import ArenaTable from '../../components/game/ArenaTable';
 import PlayerHUD from '../../components/game/PlayerHUD';
+import RevealOverlay from '../../components/game/RevealOverlay';
 import { Theme } from '../../constants/Theme';
+import {
+  hapticLight,
+  hapticMedium,
+  hapticHeavy,
+  hapticSuccess,
+  hapticError,
+  hapticSelection,
+} from '../../utils/haptics';
+import { play as playSfx } from '../../utils/sound';
 
 export default function GameScreen() {
   const insets = useSafeAreaInsets();
@@ -55,11 +65,18 @@ export default function GameScreen() {
   const losingInfluenceId = useGameState((state) => state.losingInfluenceId);
   const transitioning = useGameState((state) => state.transitioning);
   const turnTimer = useGameState((state) => state.turnTimer);
+  const lastReveal = useGameState((state) => state.lastReveal);
 
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [showTargetPicker, setShowTargetPicker] = useState(false);
   const [showGraveyard, setShowGraveyard] = useState(false);
   const [showRules, setShowRules] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{
+    type: string;
+    targetId: string;
+    targetName: string;
+  } | null>(null);
+  const [opponentDetail, setOpponentDetail] = useState<any | null>(null);
   const [alertConfig, setAlertConfig] = useState<{
     visible: boolean;
     title: string;
@@ -96,7 +113,84 @@ export default function GameScreen() {
   const me = players.find((p) => p.id === myId);
   const others = players.filter((p) => p.id !== myId);
 
+  const statusInfo = buildStatusInfo({
+    phase,
+    players,
+    currentPlayerId,
+    waitingForResponseIndex,
+    losingInfluenceId,
+    currentAction,
+    pendingBlock,
+    myId: myId || '',
+  });
+
+  const isMyTurn = currentPlayerId === myId;
+
+  // ===== Feedback sensorial: haptics + sons =====
+  const lastRevealStampRef = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    if (!lastReveal) return;
+    if (lastRevealStampRef.current === lastReveal.stamp) return;
+    lastRevealStampRef.current = lastReveal.stamp;
+    if (lastReveal.verdict === 'proven') {
+      hapticSuccess();
+      playSfx('reveal_success');
+    } else {
+      hapticError();
+      playSfx('reveal_bluff');
+    }
+  }, [lastReveal]);
+
+  const prevTransitioningRef = React.useRef(transitioning);
+  const prevPhaseRef = React.useRef(phase);
+  const prevCoinsRef = React.useRef(me?.coins || 0);
+  const prevCardsLostRef = React.useRef(
+    me?.cards?.filter((c: any) => c.isFlipped).length || 0
+  );
+
+  React.useEffect(() => {
+    // Pulso leve quando você começa a decidir algo
+    if (prevTransitioningRef.current && !transitioning) {
+      if (statusInfo.waitingOnMe) {
+        hapticLight();
+        playSfx('turn_start');
+      }
+    }
+    prevTransitioningRef.current = transitioning;
+  }, [transitioning]);
+
+  React.useEffect(() => {
+    if (phase === 'game_over' && prevPhaseRef.current !== 'game_over') {
+      const iWin = me && !me.cards.every((c: any) => c.isFlipped);
+      if (iWin) {
+        hapticSuccess();
+        playSfx('victory');
+      } else {
+        hapticError();
+        playSfx('defeat');
+      }
+    }
+    prevPhaseRef.current = phase;
+  }, [phase]);
+
+  React.useEffect(() => {
+    if (!me) return;
+    const coins = me.coins || 0;
+    if (coins !== prevCoinsRef.current) {
+      if (coins > prevCoinsRef.current) playSfx('coin_gain');
+      else playSfx('coin_loss');
+      prevCoinsRef.current = coins;
+    }
+    const lost = me.cards?.filter((c: any) => c.isFlipped).length || 0;
+    if (lost > prevCardsLostRef.current) {
+      hapticHeavy();
+      playSfx('card_flip');
+      prevCardsLostRef.current = lost;
+    }
+  }, [me?.coins, me?.cards]);
+
   const handleAction = (type: string) => {
+    hapticSelection();
     if (me && me.coins >= 10 && type !== 'coup') {
       setAlertConfig({
         visible: true,
@@ -115,25 +209,40 @@ export default function GameScreen() {
   };
 
   const selectTarget = (targetId: string) => {
-    if (pendingAction) {
-      sendAction({ type: pendingAction, source: myId, target: targetId });
+    if (!pendingAction) return;
+    const target = players.find((p) => p.id === targetId);
+    // Ações destrutivas (Golpe / Assassinato) exigem confirmação
+    if (pendingAction === 'coup' || pendingAction === 'assassinate') {
       setShowTargetPicker(false);
-      setPendingAction(null);
+      setConfirmAction({
+        type: pendingAction,
+        targetId,
+        targetName: target?.name || '??',
+      });
+      return;
     }
+    sendAction({ type: pendingAction, source: myId, target: targetId });
+    setShowTargetPicker(false);
+    setPendingAction(null);
   };
 
-  const statusInfo = buildStatusInfo({
-    phase,
-    players,
-    currentPlayerId,
-    waitingForResponseIndex,
-    losingInfluenceId,
-    currentAction,
-    pendingBlock,
-    myId: myId || '',
-  });
+  const confirmDestructive = () => {
+    if (!confirmAction) return;
+    hapticMedium();
+    sendAction({
+      type: confirmAction.type,
+      source: myId,
+      target: confirmAction.targetId,
+    });
+    setConfirmAction(null);
+    setPendingAction(null);
+  };
 
-  const isMyTurn = currentPlayerId === myId;
+  const cancelDestructive = () => {
+    setConfirmAction(null);
+    setPendingAction(null);
+  };
+
   const alivePlayers = players.filter((p) =>
     p.cards?.some((c) => !c.isFlipped)
   ).length;
@@ -143,7 +252,16 @@ export default function GameScreen() {
       <StatusBar hidden />
 
       {/* HEADER PREMIUM */}
-      <View style={[styles.topBar, { paddingTop: Math.max(insets.top, 6) }]}>
+      <View
+        style={[
+          styles.topBar,
+          {
+            paddingTop: Math.max(insets.top, 6),
+            paddingLeft: 16 + Math.max(insets.left, 0),
+            paddingRight: 16 + Math.max(insets.right, 0),
+          },
+        ]}
+      >
         <View style={styles.topLeft}>
           <TouchableOpacity
             style={styles.exitButton}
@@ -218,12 +336,23 @@ export default function GameScreen() {
       </View>
 
       {/* LAYOUT PRINCIPAL: 3 colunas */}
-      <View style={styles.mainContent}>
+      <View
+        style={[
+          styles.mainContent,
+          {
+            paddingLeft: Math.max(insets.left, 0),
+            paddingRight: Math.max(insets.right, 0),
+          },
+        ]}
+      >
         {/* Painel de ações (esquerda) */}
         <ActionPanel
           onAction={handleAction}
           coins={me?.coins || 0}
           disabledActions={phase !== 'action' || !isMyTurn || transitioning}
+          aliveOpponents={others.filter((p) =>
+            p.cards?.some((c: any) => !c.isFlipped)
+          ).length}
         />
 
         {/* Arena central com jogadores */}
@@ -241,6 +370,10 @@ export default function GameScreen() {
             statusKind={statusInfo.kind}
             turnTimer={turnTimer}
             transitioning={transitioning}
+            onPlayerLongPress={(p) => {
+              hapticLight();
+              setOpponentDetail(p);
+            }}
           />
 
           {/* HUD do jogador (cantos inferiores, não bloqueia mesa) */}
@@ -249,10 +382,14 @@ export default function GameScreen() {
             isItsTurn={isMyTurn}
             phase={phase}
             isLosingInfluence={losingInfluenceId === myId}
-            onSelectInfluence={(role) =>
-              useGameState.getState().selectInfluence(role)
-            }
+            onSelectInfluence={(role) => {
+              hapticHeavy();
+              useGameState.getState().selectInfluence(role);
+            }}
           />
+
+          {/* Reveal central de carta provada / blefe */}
+          <RevealOverlay reveal={lastReveal} />
         </View>
 
         {/* Log (direita) */}
@@ -396,7 +533,11 @@ export default function GameScreen() {
                     {(phase === 'challenge' || !!pendingBlock) && (
                       <TouchableOpacity
                         style={styles.challengeActionBtn}
-                        onPress={() => sendResponse('challenge')}
+                        onPress={() => {
+                          hapticMedium();
+                          playSfx('challenge');
+                          sendResponse('challenge');
+                        }}
                       >
                         <Swords color="#FFF" size={14} />
                         <Text style={styles.buttonText}>
@@ -411,7 +552,11 @@ export default function GameScreen() {
                       <View style={styles.dualBlockRow}>
                         <TouchableOpacity
                           style={[styles.blockActionBtn, { flex: 1 }]}
-                          onPress={() => sendResponse('block', 'captain')}
+                          onPress={() => {
+                            hapticMedium();
+                            playSfx('block');
+                            sendResponse('block', 'captain');
+                          }}
                         >
                           <Text style={styles.blockButtonText}>CAPITÃO</Text>
                         </TouchableOpacity>
@@ -420,7 +565,11 @@ export default function GameScreen() {
                             styles.blockActionBtn,
                             { flex: 1, backgroundColor: '#4E7AA0' },
                           ]}
-                          onPress={() => sendResponse('block', 'ambassador')}
+                          onPress={() => {
+                            hapticMedium();
+                            playSfx('block');
+                            sendResponse('block', 'ambassador');
+                          }}
                         >
                           <Text style={styles.blockButtonText}>EMBAIXADOR</Text>
                         </TouchableOpacity>
@@ -428,7 +577,11 @@ export default function GameScreen() {
                     ) : canBlock ? (
                       <TouchableOpacity
                         style={styles.blockActionBtn}
-                        onPress={() => sendResponse('block')}
+                        onPress={() => {
+                          hapticMedium();
+                          playSfx('block');
+                          sendResponse('block');
+                        }}
                       >
                         <Text style={styles.blockButtonText}>BLOQUEAR</Text>
                       </TouchableOpacity>
@@ -436,7 +589,10 @@ export default function GameScreen() {
 
                     <TouchableOpacity
                       style={styles.passActionBtn}
-                      onPress={() => sendResponse('pass')}
+                      onPress={() => {
+                        hapticLight();
+                        sendResponse('pass');
+                      }}
                     >
                       <Text style={styles.secondaryButtonText}>PERMITIR</Text>
                     </TouchableOpacity>
@@ -545,6 +701,103 @@ export default function GameScreen() {
                 <Text style={styles.utilityButtonText}>CONVOCAR BOT</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      )}
+
+      {/* Confirmação de ação destrutiva (Golpe / Assassinato) */}
+      {confirmAction && (
+        <View style={styles.overlay}>
+          <View
+            style={[
+              styles.alertBox,
+              {
+                maxWidth: 460,
+                borderColor: Theme.colors.imperialRed,
+              },
+            ]}
+          >
+            <Text
+              style={[styles.alertTitle, { color: Theme.colors.imperialRed }]}
+            >
+              {confirmAction.type === 'coup'
+                ? 'GOLPE DE ESTADO'
+                : 'ASSASSINATO'}
+            </Text>
+            <Text style={styles.alertDesc}>
+              {confirmAction.type === 'coup'
+                ? `Gastar 7 moedas para eliminar ${confirmAction.targetName.toUpperCase()}? A ação é irreversível e não pode ser desafiada nem bloqueada.`
+                : `Pagar 3 moedas para ordenar o assassinato de ${confirmAction.targetName.toUpperCase()}? Pode ser bloqueado pela Condessa ou contestado.`}
+            </Text>
+            <View style={styles.row}>
+              <TouchableOpacity
+                style={[styles.passActionBtn, { flex: 1 }]}
+                onPress={cancelDestructive}
+              >
+                <Text style={styles.secondaryButtonText}>CANCELAR</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.primaryButton,
+                  {
+                    flex: 1,
+                    backgroundColor: Theme.colors.imperialRedDeep,
+                    borderWidth: 1,
+                    borderColor: Theme.colors.imperialRed,
+                  },
+                ]}
+                onPress={confirmDestructive}
+              >
+                <Text style={styles.buttonText}>
+                  {confirmAction.type === 'coup' ? 'EXECUTAR GOLPE' : 'ASSASSINAR'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Detalhes do oponente (long-press no avatar) */}
+      {opponentDetail && (
+        <View style={styles.overlay}>
+          <View style={[styles.alertBox, { maxWidth: 460 }]}>
+            <Text style={styles.alertTitle}>
+              {opponentDetail.name.toUpperCase()}
+            </Text>
+            <View style={styles.opponentStatsRow}>
+              <View style={styles.opponentStatBox}>
+                <Text style={styles.opponentStatLabel}>MOEDAS</Text>
+                <Text style={styles.opponentStatValue}>{opponentDetail.coins}</Text>
+              </View>
+              <View style={styles.opponentStatBox}>
+                <Text style={styles.opponentStatLabel}>INFLUÊNCIAS</Text>
+                <Text style={styles.opponentStatValue}>
+                  {
+                    opponentDetail.cards.filter((c: any) => !c.isFlipped)
+                      .length
+                  }
+                  /{opponentDetail.cards.length}
+                </Text>
+              </View>
+              <View style={styles.opponentStatBox}>
+                <Text style={styles.opponentStatLabel}>DESCARTADAS</Text>
+                <Text style={styles.opponentStatValue}>
+                  {opponentDetail.cards
+                    .filter((c: any) => c.isFlipped)
+                    .map((c: any) => translateRole(c.role))
+                    .join(', ') || '—'}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.opponentHint}>
+              Cartas ativas permanecem secretas.
+            </Text>
+            <TouchableOpacity
+              style={[styles.cancelBtn, { marginTop: 12 }]}
+              onPress={() => setOpponentDetail(null)}
+            >
+              <Text style={styles.cancelText}>FECHAR</Text>
+            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -860,6 +1113,47 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 10,
     letterSpacing: 1,
+  },
+
+  opponentStatsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+    justifyContent: 'center',
+    width: '100%',
+  },
+  opponentStatBox: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: Theme.radius.sm,
+    backgroundColor: 'rgba(198, 161, 91, 0.06)',
+    borderWidth: 1,
+    borderColor: Theme.colors.goldLine,
+    flexGrow: 1,
+    minWidth: 110,
+    alignItems: 'center',
+  },
+  opponentStatLabel: {
+    color: Theme.colors.textMuted,
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 1.8,
+    marginBottom: 4,
+  },
+  opponentStatValue: {
+    color: Theme.colors.gold,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    textAlign: 'center',
+  },
+  opponentHint: {
+    color: Theme.colors.textMuted,
+    fontSize: 9,
+    fontStyle: 'italic',
+    marginTop: 10,
+    textAlign: 'center',
   },
 
   lobbyCounter: {
