@@ -2,17 +2,21 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { useEffect } from 'react';
-import { View, ImageBackground } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import '../global.css';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [loaded] = useFonts({
-    // Standard fonts, but we'll use system fonts for "Clean Medieval" look
-  });
+  const [loaded] = useFonts({});
+
+  useEffect(() => {
+    ScreenOrientation.lockAsync(
+      ScreenOrientation.OrientationLock.LANDSCAPE
+    ).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (loaded) {
@@ -25,13 +29,13 @@ export default function RootLayout() {
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: '#F4E7D3' }, // Medieval BG
+          contentStyle: { backgroundColor: '#0B0F14' },
+          animation: 'fade',
         }}
       >
         <Stack.Screen name="index" />
-        <Stack.Screen name="game/[roomId]" />
       </Stack>
-      <StatusBar style="dark" />
+      <StatusBar style="light" hidden />
     </SafeAreaProvider>
   );
 }

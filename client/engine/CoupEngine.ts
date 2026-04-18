@@ -44,10 +44,12 @@ export class CoupEngine {
         ];
       }
     });
+    // Sorteia o jogador inicial aleatoriamente
+    this.state.turnIndex = Math.floor(Math.random() * this.state.players.length);
     this.state.phase = 'action';
     this.state.waitingForResponseIndex = null;
     this.state.responses = {};
-    this.addLog(`📜 O jogo começou! Turno de ${this.getCurrentPlayer().name}`);
+    this.addLog(`🎲 Sorteio: ${this.getCurrentPlayer().name} começa o jogo!`);
   }
 
   private buildDeck(): Role[] {
@@ -350,20 +352,42 @@ export class CoupEngine {
         const waiting = this.loseInfluence(challengerId, 'next_turn');
         if (!waiting) this.nextTurn();
       } else {
-        // Ação legítima: Desafiante perde carta e ação resolve
-        const waiting = this.loseInfluence(challengerId, 'resolve_action');
-        if (!waiting) this.resolveAction();
+        // Ação legítima: Desafiante perde carta.
+        // Se a ação ainda pode ser bloqueada pelo alvo, abrimos a fase de bloqueio antes de resolver.
+        const needsBlockPhase = !!action.target && this.isActionBlockable(action.type);
+        const pendingType = needsBlockPhase ? 'allow_block' : 'resolve_action';
+        const waiting = this.loseInfluence(challengerId, pendingType);
+        if (!waiting) {
+          if (needsBlockPhase) {
+            this.openBlockPhaseForTarget();
+          } else {
+            this.resolveAction();
+          }
+        }
       }
     } else {
       this.addLog(`❗ ${targetPlayer.name} estava blefando!`);
       
       if (isChallengingBlock) {
-        // Bloqueio falso: A ação original prossegue (se o alvo ainda estiver vivo)
+        // Bloqueio falso: A ação original prossegue
         this.state.phase = 'action'; 
-        const isWaiting = this.loseInfluence(targetId, 'resolve_action');
+        
+        // Se for uma ação que pode ser bloqueada por outros (como Ajuda Externa), reabre a fase de bloqueio.
+        // Diferente de Assassinato/Roubo onde o alvo já tentou e falhou (e perdeu carta),
+        // no caso de FA, qualquer um pode tentar bloquear.
+        const isForeignAid = action.type === 'foreign_aid';
+        const resolutionType = isForeignAid ? 'reopen_block' : 'resolve_action';
+        
+        const isWaiting = this.loseInfluence(targetId, resolutionType);
         if (!isWaiting && (this.state.phase as string) !== 'game_over') {
-          this.addLog(`⚔️ O bloqueio falhou! A ação original de ${this.getPlayerName(action.source)} prosseguirá.`);
-          this.resolveAction();
+          if (isForeignAid) {
+            this.addLog(`⚔️ O bloqueio de ${targetPlayer.name} falhou! Outros nobres ainda podem tentar bloquear.`);
+            this.state.pendingBlock = undefined;
+            this.reopenBlockPhaseEveryone();
+          } else {
+            this.addLog(`⚔️ O bloqueio falhou! A ação original de ${this.getPlayerName(action.source)} prosseguirá.`);
+            this.resolveAction();
+          }
         }
       } else {
         // Ação falsa: A ação é CANCELADA
@@ -504,7 +528,7 @@ export class CoupEngine {
     }
   }
 
-  private loseInfluence(playerId: string, nextAction: 'next_turn' | 'resolve_action' | 'action_fail' = 'next_turn'): boolean {
+  private loseInfluence(playerId: string, nextAction: 'next_turn' | 'resolve_action' | 'action_fail' | 'allow_block' | 'reopen_block' = 'next_turn'): boolean {
     const player = this.state.players.find(p => p.id === playerId);
     if (!player) return false;
 
@@ -554,6 +578,10 @@ export class CoupEngine {
 
       if (resolution === 'resolve_action') {
         this.resolveAction();
+      } else if (resolution === 'allow_block') {
+        this.openBlockPhaseForTarget();
+      } else if (resolution === 'reopen_block') {
+        this.reopenBlockPhaseEveryone();
       } else {
         this.nextTurn();
       }
@@ -563,9 +591,14 @@ export class CoupEngine {
   }
 
   public handleExchangeChoice(playerId: string, keptRoles: Role[]) {
-    if (this.state.phase !== 'exchanging' || playerId !== this.state.players[this.state.turnIndex].id) return;
-    
-    const player = this.state.players[this.state.turnIndex];
+    if (this.state.phase !== 'exchanging') return;
+
+    // Usa waitingForResponseIndex (definido em handleExchange) em vez de turnIndex,
+    // que pode mudar se houver atraso no processamento — mais robusto contra deadlocks.
+    const expectedIndex = this.state.waitingForResponseIndex;
+    if (expectedIndex === null || this.state.players[expectedIndex]?.id !== playerId) return;
+
+    const player = this.state.players[expectedIndex];
     if (!player || !this.state.exchangingCards) return;
 
     // Combinar cartas atuais vivas com as compradas
@@ -596,20 +629,61 @@ export class CoupEngine {
     this.nextTurn();
   }
 
-  private replaceCard(playerId: string, role: Role) {
-    const player = this.state.players.find(p => p.id === playerId);
-    if (!player) return;
-
-    const cardIndex = player.cards.findIndex(c => c.role === role && !c.isFlipped);
-    if (cardIndex >= 0) {
-      this.state.deck.unshift(role);
-      this.state.deck = this.shuffleDeck(this.state.deck);
-      const newRole = this.state.deck.pop();
-      if (newRole) {
-        player.cards[cardIndex].role = newRole;
-      }
+  /**
+   * Abre a fase de bloqueio exclusivamente para o alvo da ação atual.
+   * Chamado após desafio resolvido a favor do atacante, garantindo que o
+   * alvo ainda possa bloquear com Condessa (ex: Assassinato provado).
+   */
+  private openBlockPhaseForTarget() {
+    const action = this.state.currentAction;
+    if (!action || !action.target) {
+      this.resolveAction();
+      return;
     }
+
+    const targetPlayer = this.state.players.find(p => p.id === action.target);
+    
+    // Se o alvo morreu perdendo a carta no desafio, a ação original (assassinato/roubo)
+    // não precisa mais ser resolvida contra ele.
+    if (!targetPlayer || targetPlayer.cards.every(c => c.isFlipped)) {
+      this.addLog(`💀 O alvo ${targetPlayer?.name || ''} já foi eliminado pelo desafio.`);
+      this.state.currentAction = undefined; // Cancela a ação original
+      this.nextTurn();
+      return;
+    }
+
+    this.state.phase = 'block';
+    this.state.responses = {};
+    this.state.pendingBlock = undefined;
+    const targetIndex = this.state.players.findIndex(p => p.id === action.target);
+    this.state.waitingForResponseIndex = targetIndex;
+    this.state.responderCycleStartIndex = targetIndex; 
+
+    const blockRoles = action.type === 'assassinate' ? 'Condessa' : 
+                       action.type === 'steal' ? 'Capitão ou Embaixador' : 'Duque';
+
+    this.addLog(`🛡️ ${targetPlayer.name}, o desafio falhou! Deseja bloquear com ${blockRoles}?`);
   }
+
+  /**
+   * Reabre a fase de bloqueio para todos os jogadores vivos
+   * (Usado após um bloqueio de Ajuda Externa ser pego no blefe)
+   */
+  private reopenBlockPhaseEveryone() {
+    const action = this.state.currentAction;
+    if (!action) {
+      this.nextTurn();
+      return;
+    }
+
+    this.addLog(`🛡️ Reiniciando fase de bloqueio para a Ajuda Externa...`);
+    this.state.phase = 'block';
+    this.state.responses = {};
+    this.state.pendingBlock = undefined;
+    this.state.responderCycleStartIndex = this.state.turnIndex;
+    this.setNextResponder(this.state.turnIndex);
+  }
+
 
   private getRequiredRole(action: string): Role | null {
     switch (action) {

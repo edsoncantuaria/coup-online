@@ -49,6 +49,6 @@ export interface GameState {
   responderCycleStartIndex: number | null;
   responses: Record<string, 'pass' | 'challenge' | 'block' | 'allow'>;
   pendingResolution?: {
-    type: 'next_turn' | 'resolve_action' | 'action_fail';
+    type: 'next_turn' | 'resolve_action' | 'action_fail' | 'allow_block' | 'reopen_block';
   };
 }

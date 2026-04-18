@@ -1,58 +1,87 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   StyleSheet,
-  Animated,
-  Easing
+  Pressable,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  Easing,
+  SlideInLeft,
+  SlideInRight,
+} from 'react-native-reanimated';
 import {
   Users,
-  WifiOff,
+  Crown,
+  Swords,
+  ChevronRight,
+  BookOpen,
+  Shield,
+  Sparkles,
+  DoorOpen,
 } from 'lucide-react-native';
 import { useGameState } from '../hooks/useGameState';
-import MedievalAlert from '../components/MedievalAlert';
+import CourtAlert from '../components/CourtAlert';
+import RulesView from '../components/RulesView';
+import { Theme } from '../constants/Theme';
 
 export default function LobbyScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [name, setName] = useState('Nobre Cavaleiro');
+  const [name, setName] = useState('Nobre da Corte');
   const [room, setRoom] = useState('');
+  const [showRules, setShowRules] = useState(false);
   const { joinRoom, startOfflineGame } = useGameState();
-  
-  const [alertConfig, setAlertConfig] = useState<{visible: boolean, title: string, message: string}>({
-    visible: false, title: '', message: ''
-  });
 
-  // Entrance Animations
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+  }>({ visible: false, title: '', message: '' });
+
+  // Animated glow do título
+  const glow = useSharedValue(0);
+  const emblemRotate = useSharedValue(0);
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 1000,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 800,
-        easing: Easing.out(Easing.exp),
-        useNativeDriver: true,
-      })
-    ]).start();
+    glow.value = withRepeat(
+      withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      true
+    );
+    emblemRotate.value = withRepeat(
+      withTiming(1, { duration: 22000, easing: Easing.linear }),
+      -1,
+      false
+    );
   }, []);
+
+  const titleGlowStyle = useAnimatedStyle(() => ({
+    textShadowRadius: 8 + glow.value * 18,
+    opacity: 0.9 + glow.value * 0.1,
+  }));
+
+  const emblemStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${emblemRotate.value * 360}deg` }],
+  }));
 
   const handleCreate = () => {
     if (!name.trim()) {
-      setAlertConfig({ visible: true, title: 'O Código de Honra', message: 'Por favor, grave o seu nome nos anais antes de fundar um reino.' });
+      setAlertConfig({
+        visible: true,
+        title: 'O Código de Honra',
+        message: 'Grave o seu nome antes de reunir um conselho.',
+      });
       return;
     }
     const newRoom = Math.random().toString(36).substring(7).toUpperCase();
@@ -62,7 +91,12 @@ export default function LobbyScreen() {
 
   const handleJoin = () => {
     if (!name.trim() || !room.trim()) {
-      setAlertConfig({ visible: true, title: 'Portões Fechados', message: 'Você deve apresentar um Nome e o Selo (Código) do reino para entrar.' });
+      setAlertConfig({
+        visible: true,
+        title: 'Portões Fechados',
+        message:
+          'Você deve apresentar um Nome e o Selo Real (Código) para entrar.',
+      });
       return;
     }
     joinRoom(room, name);
@@ -70,304 +104,474 @@ export default function LobbyScreen() {
   };
 
   const handleOffline = () => {
-    const offlineName = name.trim() || 'Cavaleiro Solitário';
+    const offlineName = name.trim() || 'Nobre Solitário';
     startOfflineGame(offlineName);
     router.push('/game/OFFLINE');
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-      <StatusBar style="light" />
-      
-      {/* Decorative Top Banner */}
-      <View style={styles.topTrim} />
+    <View style={styles.root}>
+      <StatusBar style="light" hidden />
 
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent} 
-        showsVerticalScrollIndicator={false}
+      {/* Background layered */}
+      <LinearGradient
+        colors={['#0B0F14', '#0F1520', '#070A0F']}
+        style={StyleSheet.absoluteFill}
+      />
+
+      {/* Ornamental emblem rotating in bg */}
+      <Animated.View
+        style={[styles.emblemBg, emblemStyle]}
+        pointerEvents="none"
       >
-        <Animated.View style={[
-          styles.hero, 
-          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
-        ]}>
+        <View style={styles.emblemRing} />
+        <View style={[styles.emblemRing, styles.emblemRingInner]} />
+        <Crown
+          color="rgba(198, 161, 91, 0.08)"
+          size={220}
+          strokeWidth={1}
+        />
+      </Animated.View>
 
-          <Text style={styles.title}>COUP</Text>
-          <Text style={styles.subtitle}>E D I Ç Ã O  M E D I E V A L</Text>
+      {/* Top trim */}
+      <LinearGradient
+        colors={['transparent', Theme.colors.gold, 'transparent']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.topTrim}
+      />
+
+      <View
+        style={[
+          styles.layout,
+          { paddingTop: Math.max(insets.top, 8), paddingBottom: insets.bottom },
+        ]}
+      >
+        {/* COLUNA ESQUERDA — Hero */}
+        <Animated.View
+          entering={SlideInLeft.duration(700).springify()}
+          style={styles.heroCol}
+        >
+          <View style={styles.heroBadge}>
+            <Sparkles color={Theme.colors.gold} size={11} />
+            <Text style={styles.heroBadgeText}>THE ROYAL COURT</Text>
+          </View>
+
+          <Animated.Text style={[styles.title, titleGlowStyle]}>
+            COUP
+          </Animated.Text>
+
+          <View style={styles.titleUnderline} />
+
+          <Text style={styles.tagline}>
+            Blefe, intriga e honra na corte das máscaras.
+          </Text>
+
+          <Text style={styles.flavor}>
+            "A traição é a única moeda que nunca perde o valor."
+          </Text>
+
+          <View style={styles.heroFooterRow}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.ghostBtn,
+                pressed && { opacity: 0.8 },
+              ]}
+              onPress={() => setShowRules(true)}
+            >
+              <BookOpen color={Theme.colors.gold} size={13} />
+              <Text style={styles.ghostBtnText}>COMPÊNDIO DA CORTE</Text>
+            </Pressable>
+          </View>
         </Animated.View>
 
-        <Animated.View style={[
-          styles.formContainer, 
-          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
-        ]}>
-          
-          {/* Identity Section */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>◈ SEU NOME DE NOBRE ◈</Text>
+        {/* COLUNA DIREITA — Ações */}
+        <Animated.View
+          entering={SlideInRight.duration(700).springify()}
+          style={styles.formCol}
+        >
+          {/* Nome */}
+          <View style={styles.fieldBlock}>
+            <View style={styles.fieldHeader}>
+              <Shield color={Theme.colors.gold} size={11} />
+              <Text style={styles.fieldLabel}>SUA IDENTIDADE</Text>
+            </View>
             <View style={styles.inputWrapper}>
               <TextInput
                 style={styles.input}
                 value={name}
                 onChangeText={setName}
                 placeholder="Ex. Sir Arthur"
-                placeholderTextColor="#666"
+                placeholderTextColor={Theme.colors.textMuted}
+                maxLength={24}
               />
             </View>
           </View>
 
-          {/* Local Play */}
-          <View style={styles.cardSection}>
-            <Text style={styles.sectionHeader}>TREINAMENTO LOCAL</Text>
-            <TouchableOpacity style={styles.btnAction} onPress={handleOffline} activeOpacity={0.8}>
-              <View style={styles.btnIconBg}>
-                <WifiOff color="#1A1F24" size={24} />
+          {/* Botão principal — OFFLINE */}
+          <Pressable
+            onPress={handleOffline}
+            style={({ pressed }) => [
+              styles.primaryBtnWrap,
+              pressed && { transform: [{ scale: 0.98 }] },
+            ]}
+          >
+            <LinearGradient
+              colors={[Theme.colors.goldHigh, Theme.colors.gold, Theme.colors.goldSoft]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.primaryBtn}
+            >
+              <View style={styles.primaryIconBox}>
+                <Swords color="#1A1306" size={18} />
               </View>
-              <View style={styles.btnTextWrap}>
-                <Text style={styles.btnTitle}>Modo Solitário</Text>
-                <Text style={styles.btnSubtitle}>Enfrente a IA da Corte</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.primaryBtnTitle}>INICIAR CAMPANHA</Text>
+                <Text style={styles.primaryBtnSub}>
+                  Modo Solitário · Enfrente a IA da Corte
+                </Text>
               </View>
-            </TouchableOpacity>
-          </View>
+              <ChevronRight color="#1A1306" size={20} />
+            </LinearGradient>
+          </Pressable>
 
-          {/* Divider */}
+          {/* Divisor */}
           <View style={styles.divider}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OU MULTIPLAYER</Text>
+            <Text style={styles.dividerText}>OU ENCONTRO DE NOBRES</Text>
             <View style={styles.dividerLine} />
           </View>
 
-          {/* Online Section */}
-          <View style={styles.cardSection}>
-            <Text style={styles.sectionHeader}>CONEXÃO REAL</Text>
-            
-            <View style={styles.row}>
-              <View style={[styles.inputWrapper, { flex: 1 }]}>
-                <TextInput
-                  style={[styles.input, { fontSize: 16 }]}
-                  value={room}
-                  onChangeText={setRoom}
-                  placeholder="CÓDIGO DA SALA"
-                  autoCapitalize="characters"
-                  maxLength={6}
-                  placeholderTextColor="#666"
-                />
-              </View>
-              <TouchableOpacity style={styles.btnJoin} onPress={handleJoin} activeOpacity={0.8}>
-                <Text style={styles.btnJoinText}>INVASÃO</Text>
-              </TouchableOpacity>
+          {/* Online actions row */}
+          <View style={styles.onlineRow}>
+            <View style={[styles.inputWrapper, { flex: 1 }]}>
+              <TextInput
+                style={[styles.input, styles.codeInput]}
+                value={room}
+                onChangeText={(t) => setRoom(t.toUpperCase())}
+                placeholder="CÓD. SALA"
+                placeholderTextColor={Theme.colors.textMuted}
+                autoCapitalize="characters"
+                maxLength={8}
+              />
             </View>
-            
-            <TouchableOpacity style={styles.btnCreate} onPress={handleCreate} activeOpacity={0.8}>
-              <Users color="#D4AF37" size={18} />
-              <Text style={styles.btnCreateText}>FUNDAR NOVO REINO</Text>
-            </TouchableOpacity>
+
+            <Pressable
+              onPress={handleJoin}
+              style={({ pressed }) => [
+                styles.joinBtn,
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <DoorOpen color={Theme.colors.text} size={14} />
+              <Text style={styles.joinBtnText}>INVASÃO</Text>
+            </Pressable>
           </View>
 
+          <Pressable
+            onPress={handleCreate}
+            style={({ pressed }) => [
+              styles.createBtn,
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <Users color={Theme.colors.gold} size={14} />
+            <Text style={styles.createBtnText}>REUNIR O CONSELHO</Text>
+            <ChevronRight color={Theme.colors.gold} size={16} />
+          </Pressable>
         </Animated.View>
-        
-        <Animated.View style={{ opacity: fadeAnim }}>
-          <Text style={styles.flavorText}>"A traição é a única moeda que nunca perde o valor no reino."</Text>
-        </Animated.View>
-      </ScrollView>
+      </View>
 
-      <MedievalAlert 
+      {/* Bottom trim */}
+      <LinearGradient
+        colors={['transparent', Theme.colors.goldSoft, 'transparent']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.bottomTrim}
+      />
+
+      <CourtAlert
         visible={alertConfig.visible}
         title={alertConfig.title}
         message={alertConfig.message}
         onClose={() => setAlertConfig({ ...alertConfig, visible: false })}
       />
+
+      <RulesView visible={showRules} onClose={() => setShowRules(false)} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: '#0F1318', 
+    backgroundColor: Theme.colors.background,
+  },
+  emblemBg: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: 420,
+    height: 420,
+    marginLeft: -210,
+    marginTop: -210,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.4,
+  },
+  emblemRing: {
+    position: 'absolute',
+    width: 380,
+    height: 380,
+    borderRadius: 190,
+    borderWidth: 1,
+    borderColor: 'rgba(198, 161, 91, 0.07)',
+  },
+  emblemRingInner: {
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    borderColor: 'rgba(198, 161, 91, 0.05)',
   },
   topTrim: {
-    height: 4,
-    backgroundColor: '#D4AF37',
+    height: 2,
     width: '100%',
-    shadowColor: '#D4AF37',
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
-    elevation: 10,
   },
-  scrollContent: {
-    padding: 24,
-    flexGrow: 1,
+  bottomTrim: {
+    height: 2,
+    width: '100%',
+  },
+
+  layout: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    gap: 20,
+  },
+
+  /* Hero (esquerda) */
+  heroCol: {
+    flex: 1.2,
     justifyContent: 'center',
-    alignItems: 'center',
+    paddingRight: 10,
   },
-  hero: {
+  heroBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 40,
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: Theme.radius.pill,
+    backgroundColor: 'rgba(198, 161, 91, 0.1)',
+    borderWidth: 1,
+    borderColor: Theme.colors.goldLine,
+    marginBottom: 14,
   },
-  iconGlow: {
-    shadowColor: '#D4AF37',
-    shadowOpacity: 0.3,
-    shadowRadius: 25,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 15,
+  heroBadgeText: {
+    color: Theme.colors.gold,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 2.5,
   },
   title: {
-    fontSize: 76,
-    fontFamily: 'serif',
+    fontFamily: Theme.fonts.serif,
+    color: Theme.colors.gold,
+    fontSize: 92,
     fontWeight: '900',
-    color: '#D4AF37',
-    letterSpacing: -2,
-    marginTop: 10,
-    textShadowColor: 'rgba(212, 175, 55, 0.4)',
-    textShadowOffset: { width: 0, height: 4 },
-    textShadowRadius: 12,
+    letterSpacing: -3,
+    lineHeight: 92,
+    textShadowColor: 'rgba(198, 161, 91, 0.35)',
+    textShadowOffset: { width: 0, height: 0 },
   },
-  subtitle: {
-    fontSize: 12,
-    color: '#8E1616', // Dark crimson
-    fontWeight: '800',
-    marginTop: -8,
+  titleUnderline: {
+    width: 90,
+    height: 2,
+    backgroundColor: Theme.colors.gold,
+    marginTop: 6,
+    marginBottom: 14,
   },
-  formContainer: {
-    width: '100%',
-    maxWidth: 400,
-    alignItems: 'center',
-  },
-  inputGroup: {
-    width: '100%',
-    marginBottom: 30,
-    alignItems: 'center',
-  },
-  label: {
-    fontSize: 12,
-    color: '#A1ADC1',
-    fontWeight: '700',
+  tagline: {
+    color: Theme.colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    maxWidth: 340,
     marginBottom: 10,
+  },
+  flavor: {
+    color: Theme.colors.textMuted,
+    fontSize: 11,
+    fontStyle: 'italic',
+    letterSpacing: 0.4,
+    maxWidth: 340,
+    marginBottom: 18,
+    lineHeight: 16,
+  },
+  heroFooterRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+  },
+  ghostBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: Theme.radius.sm,
+    borderWidth: 1,
+    borderColor: Theme.colors.goldLine,
+    backgroundColor: 'rgba(198,161,91,0.06)',
+  },
+  ghostBtnText: {
+    color: Theme.colors.gold,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.8,
+  },
+
+  /* Formulário (direita) */
+  formCol: {
+    flex: 1,
+    maxWidth: 420,
+    justifyContent: 'center',
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Theme.colors.goldLine,
+    borderRadius: Theme.radius.lg,
+    backgroundColor: 'rgba(11, 15, 20, 0.6)',
+    ...Theme.shadows.premium,
+  },
+  fieldBlock: {
+    marginBottom: 14,
+  },
+  fieldHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: 6,
+  },
+  fieldLabel: {
+    color: Theme.colors.gold,
+    fontSize: 9.5,
+    fontWeight: '900',
     letterSpacing: 2,
   },
   inputWrapper: {
-    width: '100%',
-    backgroundColor: '#1A1F24',
+    backgroundColor: Theme.colors.surface,
     borderWidth: 1,
-    borderColor: '#30363D',
-    borderRadius: 8,
+    borderColor: Theme.colors.border,
+    borderRadius: Theme.radius.md,
     overflow: 'hidden',
   },
   input: {
-    padding: 18,
-    fontSize: 20,
-    color: '#EADDCA',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: Theme.colors.text,
     fontWeight: '700',
+  },
+  codeInput: {
     textAlign: 'center',
+    letterSpacing: 3,
+    fontSize: 14,
   },
-  cardSection: {
-    width: '100%',
-    backgroundColor: '#151A1F',
-    borderWidth: 1,
-    borderColor: '#2D333B',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 10,
+
+  /* Primary button */
+  primaryBtnWrap: {
+    borderRadius: Theme.radius.md,
+    overflow: 'hidden',
+    marginBottom: 14,
+    ...Theme.shadows.goldGlow,
   },
-  sectionHeader: {
-    fontSize: 11,
-    color: '#A1ADC1',
-    fontWeight: '800',
-    letterSpacing: 1.5,
-    marginBottom: 12,
-    alignSelf: 'flex-start',
-  },
-  btnAction: {
-    backgroundColor: '#D4AF37',
+  primaryBtn: {
     flexDirection: 'row',
-    borderRadius: 8,
-    padding: 12,
     alignItems: 'center',
-    shadowColor: '#D4AF37',
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  btnIconBg: {
-    backgroundColor: 'rgba(26, 31, 36, 0.1)',
-    padding: 10,
-    borderRadius: 6,
+  primaryIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(26, 19, 6, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(26, 19, 6, 0.35)',
   },
-  btnTextWrap: {
-    marginLeft: 12,
-  },
-  btnTitle: {
-    color: '#1A1F24',
-    fontSize: 16,
+  primaryBtnTitle: {
+    color: '#1A1306',
+    fontSize: 13,
     fontWeight: '900',
-    letterSpacing: 0.5,
+    letterSpacing: 1.5,
   },
-  btnSubtitle: {
-    color: '#4A3B18',
-    fontSize: 12,
+  primaryBtnSub: {
+    color: '#3A2B0E',
+    fontSize: 10,
     fontWeight: '700',
+    letterSpacing: 0.3,
+    marginTop: 1,
   },
+
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: '80%',
-    marginVertical: 20,
+    gap: 10,
+    marginVertical: 10,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#30363D',
+    backgroundColor: Theme.colors.goldLine,
   },
   dividerText: {
-    color: '#666',
-    marginHorizontal: 12,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 10,
-    width: '100%',
-  },
-  btnJoin: {
-    backgroundColor: '#8E1616',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    borderRadius: 8,
-  },
-  btnJoinText: {
-    color: '#FFF',
+    color: Theme.colors.textMuted,
+    fontSize: 9,
     fontWeight: '900',
-    letterSpacing: 1,
-    fontSize: 14,
+    letterSpacing: 2,
   },
-  btnCreate: {
-    marginTop: 12,
+
+  onlineRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  joinBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: Theme.radius.md,
+    backgroundColor: Theme.colors.imperialRedDeep,
+    borderWidth: 1,
+    borderColor: Theme.colors.imperialRed,
+  },
+  joinBtnText: {
+    color: Theme.colors.text,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+  createBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(212, 175, 55, 0.05)',
-    borderWidth: 1,
-    borderColor: '#D4AF37',
-    paddingVertical: 14,
-    borderRadius: 8,
     gap: 8,
+    paddingVertical: 11,
+    borderRadius: Theme.radius.md,
+    backgroundColor: 'rgba(198, 161, 91, 0.06)',
+    borderWidth: 1,
+    borderColor: Theme.colors.gold,
   },
-  btnCreateText: {
-    color: '#D4AF37',
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  flavorText: {
-    marginTop: 50,
-    color: '#4A5568',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    fontSize: 13,
-    paddingHorizontal: 20,
-    lineHeight: 22,
+  createBtnText: {
+    color: Theme.colors.gold,
+    fontSize: 11.5,
+    fontWeight: '900',
+    letterSpacing: 1.8,
   },
 });

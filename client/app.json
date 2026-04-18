@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "coup!",
+    "name": "Coup: The Royal Court!",
     "slug": "coup-online",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "landscape",
     "icon": "./assets/icon.png",
     "scheme": "coup",
     "userInterfaceStyle": "dark",
@@ -31,6 +31,12 @@
     "plugins": [
       "expo-router",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "14c88ddc-c67f-4ffa-a48e-b33c49eb4b37"
+      }
+    }
   }
 }

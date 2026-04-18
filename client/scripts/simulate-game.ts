@@ -46,7 +46,10 @@ async function runSimulation(index: number) {
         engine.handleFlip(victimId, cardToLose.role);
       }
       else if (phase === 'exchanging') {
-        const player = state.players[state.turnIndex];
+        // Usa waitingForResponseIndex (definido em handleExchange) para consistência com o engine
+        const expectedIndex = state.waitingForResponseIndex;
+        if (expectedIndex === null) break; // Guard: não deveria acontecer
+        const player = state.players[expectedIndex];
         const keptRoles = botMgr.decideExchange(
           player.id, 
           player.cards.filter(c => !c.isFlipped).map(c => c.role), 

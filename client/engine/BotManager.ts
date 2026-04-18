@@ -33,7 +33,9 @@ export class BotManager {
     if (rand < 0.5) return { type: 'income', source: botId };
     if (rand < 0.6) return { type: 'exchange', source: botId };
     
-    if (target && rand < 0.8) return { type: 'steal', source: botId, target };
+    // Steal: Apenas alvos com moedas valem a pena (roubar 0 é desperdício de turno)
+    const targetPlayer = state.players.find(p => p.id === target);
+    if (target && targetPlayer && targetPlayer.coins > 0 && rand < 0.8) return { type: 'steal', source: botId, target };
 
     return { type: 'foreign_aid', source: botId };
   }
@@ -57,7 +59,7 @@ export class BotManager {
                          (action.type === 'steal' && isTarget) || 
                          (action.type === 'assassinate' && isTarget);
 
-        if (canBlock && rand < 0.6) {
+        if (canBlock && rand < 0.7) {
           let role: Role | undefined;
           if (action.type === 'steal') {
             role = Math.random() < 0.5 ? 'captain' : 'ambassador';

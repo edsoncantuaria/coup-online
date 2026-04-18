@@ -1,7 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
-import { Trophy } from 'lucide-react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+} from 'react-native';
+import { Check, RefreshCw } from 'lucide-react-native';
 import Card from './Card';
+import { Theme } from '../constants/Theme';
 
 interface Props {
   options: string[];
@@ -9,42 +16,73 @@ interface Props {
   onConfirm: (kept: string[]) => void;
 }
 
-export default function AmbassadorExchangeView({ options, neededCount, onConfirm }: Props) {
+export default function AmbassadorExchangeView({
+  options,
+  neededCount,
+  onConfirm,
+}: Props) {
   const [selected, setSelected] = useState<string[]>([]);
 
   const toggleSelect = (role: string, idx: number) => {
     const key = `${role}-${idx}`;
     if (selected.includes(key)) {
-      setSelected(selected.filter(k => k !== key));
+      setSelected(selected.filter((k) => k !== key));
     } else if (selected.length < neededCount) {
       setSelected([...selected, key]);
     }
   };
 
+  const canConfirm = selected.length === neededCount;
+
   return (
-    <View style={appStyles.overlay}>
-      <View style={[appStyles.alertBox, { width: '90%' }]}>
-        <Text style={appStyles.alertTitle}>🎭 TROCA DO EMBAIXADOR</Text>
-        <Text style={appStyles.alertDesc}>Selecione quais {neededCount} cartas você deseja manter nas suas mãos.</Text>
-        
-        <ScrollView 
-          style={{ width: '100%', maxHeight: 400 }}
-          contentContainerStyle={appStyles.exchangeLayout}
-          showsVerticalScrollIndicator={false}
+    <View style={styles.overlay}>
+      <View style={styles.alertBox}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <View style={styles.iconBox}>
+              <RefreshCw color={Theme.colors.gold} size={16} strokeWidth={1.8} />
+            </View>
+            <View>
+              <Text style={styles.title}>TROCA DO EMBAIXADOR</Text>
+              <Text style={styles.subtitle}>
+                Selecione {neededCount} carta{neededCount > 1 ? 's' : ''} para manter
+                na sua mão
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.counter}>
+            <Text style={styles.counterCurrent}>{selected.length}</Text>
+            <Text style={styles.counterTotal}>/{neededCount}</Text>
+          </View>
+        </View>
+
+        {/* Carrossel de cartas */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.scrollRow}
         >
           {options.map((role, idx) => {
             const key = `${role}-${idx}`;
             const isSelected = selected.includes(key);
+            const disabled = !isSelected && selected.length >= neededCount;
             return (
-              <TouchableOpacity 
-                key={key} 
-                style={[appStyles.exchangeCardWrapper, isSelected && appStyles.exchangeCardSelected]} 
-                onPress={() => toggleSelect(role, idx)}
+              <TouchableOpacity
+                key={key}
+                activeOpacity={disabled ? 1 : 0.85}
+                onPress={() => !disabled && toggleSelect(role, idx)}
+                style={[
+                  styles.cardWrapper,
+                  isSelected && styles.cardWrapperSelected,
+                  disabled && styles.cardWrapperDisabled,
+                ]}
               >
-                <Card role={role} isFlipped={true} isDead={false} />
+                <Card role={role} isFlipped={true} isDead={false} style={styles.card} />
                 {isSelected && (
-                  <View style={appStyles.checkOverlay}>
-                    <Trophy size={20} color="white" />
+                  <View style={styles.checkOverlay}>
+                    <Check color={Theme.colors.background} size={14} strokeWidth={3} />
                   </View>
                 )}
               </TouchableOpacity>
@@ -52,87 +90,202 @@ export default function AmbassadorExchangeView({ options, neededCount, onConfirm
           })}
         </ScrollView>
 
-        <TouchableOpacity 
-          style={[appStyles.primaryButton, { width: '100%', opacity: selected.length === neededCount ? 1 : 0.5 }]} 
-          disabled={selected.length !== neededCount}
-          onPress={() => onConfirm(selected.map(k => k.split('-')[0]))}
-        >
-          <Text style={appStyles.buttonText}>AUTORIZAR TROCA</Text>
-        </TouchableOpacity>
+        {/* Footer */}
+        <View style={styles.footer}>
+          <Text style={styles.hint}>
+            {canConfirm
+              ? 'As cartas não escolhidas voltam ao baralho.'
+              : `Escolha mais ${neededCount - selected.length} carta${
+                  neededCount - selected.length > 1 ? 's' : ''
+                }.`}
+          </Text>
+
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={[
+              styles.confirmBtn,
+              !canConfirm && styles.confirmBtnDisabled,
+            ]}
+            disabled={!canConfirm}
+            onPress={() => onConfirm(selected.map((k) => k.split('-')[0]))}
+          >
+            <Text
+              style={[
+                styles.confirmText,
+                !canConfirm && styles.confirmTextDisabled,
+              ]}
+            >
+              AUTORIZAR TROCA
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
 }
 
-// These styles will be shared or duplicated for simplicity in this component
-const appStyles = StyleSheet.create({
+const styles = StyleSheet.create({
   overlay: {
     position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.82)',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 25,
+    padding: 12,
     zIndex: 2000,
   },
   alertBox: {
-    backgroundColor: '#F4E7D3',
-    padding: 25,
-    borderRadius: 30,
-    borderWidth: 4,
-    borderColor: '#D4AF37',
+    backgroundColor: Theme.colors.surface,
+    width: '100%',
+    maxWidth: 820,
+    maxHeight: '94%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: Theme.colors.goldLine,
+    ...Theme.shadows.premium,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 10,
+    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.colors.borderSoft,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  iconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(198, 161, 91, 0.1)',
+    borderWidth: 1,
+    borderColor: Theme.colors.goldLine,
+  },
+  title: {
+    color: Theme.colors.gold,
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 2.5,
+  },
+  subtitle: {
+    color: Theme.colors.textMuted,
+    fontSize: 9,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    marginTop: 2,
+    fontStyle: 'italic',
+  },
+  counter: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(198, 161, 91, 0.08)',
+    borderWidth: 1,
+    borderColor: Theme.colors.goldLine,
+  },
+  counterCurrent: {
+    color: Theme.colors.gold,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  counterTotal: {
+    color: Theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  scrollRow: {
+    gap: 10,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
     alignItems: 'center',
   },
-  alertTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#8B0000',
-    marginBottom: 5,
-    textAlign: 'center',
-  },
-  alertDesc: {
-    fontSize: 14,
-    color: '#5C4033',
-    textAlign: 'center',
-    marginBottom: 25,
-    fontWeight: '600',
-  },
-  exchangeLayout: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 15,
-    marginVertical: 20,
-  },
-  exchangeCardWrapper: {
-    padding: 5,
-    borderRadius: 10,
+  cardWrapper: {
+    padding: 4,
+    borderRadius: 14,
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  exchangeCardSelected: {
-    borderColor: '#D4AF37',
-    backgroundColor: 'rgba(212, 175, 55, 0.1)',
+  cardWrapperSelected: {
+    borderColor: Theme.colors.gold,
+    backgroundColor: 'rgba(198, 161, 91, 0.1)',
+    ...Theme.shadows.goldGlow,
+  },
+  cardWrapperDisabled: {
+    opacity: 0.4,
+  },
+  card: {
+    width: 108,
+    height: 150,
   },
   checkOverlay: {
     position: 'absolute',
-    top: -10,
-    right: -10,
-    backgroundColor: '#D4AF37',
-    padding: 5,
-    borderRadius: 10,
-  },
-  primaryButton: {
-    backgroundColor: '#8B0000',
-    height: 65,
-    borderRadius: 20,
+    top: -4,
+    right: -4,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: Theme.colors.gold,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
+    borderWidth: 2,
+    borderColor: Theme.colors.surface,
   },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
+
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 10,
+    marginTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: Theme.colors.borderSoft,
+    gap: 12,
+  },
+  hint: {
+    color: Theme.colors.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    flex: 1,
+    fontStyle: 'italic',
+  },
+  confirmBtn: {
+    backgroundColor: Theme.colors.gold,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+    ...Theme.shadows.goldGlow,
+  },
+  confirmBtnDisabled: {
+    backgroundColor: Theme.colors.surfaceHigh,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  confirmText: {
+    color: Theme.colors.background,
+    fontSize: 11,
     fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+  confirmTextDisabled: {
+    color: Theme.colors.textMuted,
   },
 });

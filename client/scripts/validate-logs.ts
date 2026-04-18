@@ -70,6 +70,10 @@ for (let gi = 0; gi < games.length; gi++) {
   let turnPlayer: string | null = null;
   let pendingAction: { actor: string; action: string } | null = null;
 
+  // ── Invariante: Assassino provado → alvo deve ter oportunidade de bloquear ──
+  let assassinProvenPending = false;
+  let blockOfferedAfterProof = false;
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
@@ -169,10 +173,14 @@ for (let gi = 0; gi < games.length; gi++) {
     // ── 4.4  RESOLUÇÃO DE AÇÃO ───────────────────────────────
     // Qualquer uma das strings abaixo fecha a ação pendente
     const resolutions = [
-      '✨ Ação',             // "✨ Ação X resolvida"
-      '🚫 O bloqueio de',   // "🚫 O bloqueio de X foi aceito" (Foreign Aid / Steal / Assassinate)
-      '🛡️ O bloqueio teve sucesso', // Bloqueio provado legítimo (Contessa / Duke / Captain)
-      'A ação de',          // "A ação de X falhou pois era um blefe"
+      '✨ Ação',               // "✨ Ação X resolvida"
+      '🚫 O bloqueio de',     // "🚫 O bloqueio de X foi aceito"
+      '🛡️ O bloqueio teve sucesso', 
+      'A ação de',            // "A ação de X falhou pois era um blefe"
+      '✅ Renda não pode',     // Renda resolve
+      '✅ Auxílio Externo',    // Se resolver direto? (não temos esse log mas por garantia)
+      '⚔️ O bloqueio falhou',  // Bloqueio falhou e ação original foi retomada (a linha seguinte resolverá a ação)
+      '💀 O alvo',             // Alvo eliminado pelo desafio (nova regra)
     ];
     if (resolutions.some(r => line.includes(r))) {
       pendingAction = null;
@@ -236,6 +244,51 @@ for (let gi = 0; gi < games.length; gi++) {
         p.alive = false;
       }
       continue;
+    }
+
+    // ── 4.8  INVARIANTE: Assassino provado → bloquear deve ser oferecido ──────
+    // "✅ X PROVOU ser Assassino!" só aparece em desafio de AÇÃO (nunca de bloqueio),
+    if (line.includes('PROVOU ser Assassino')) {
+      assassinProvenPending  = true;
+      blockOfferedAfterProof = false;
+    }
+    // Log de openBlockPhaseForTarget (Assassinato ou Roubo)
+    if (assassinProvenPending && line.includes('desafio falhou') && (line.includes('Condessa') || line.includes('Capitão'))) {
+      blockOfferedAfterProof = true;
+    }
+    // Assassinato resolveu: verifica se o bloqueio foi oferecido antes
+    if (line.includes('Ação Assassinato resolvida')) {
+      if (assassinProvenPending && !blockOfferedAfterProof) {
+        // Exceção: se o alvo morreu no desafio, não há bloqueio
+        const deadMatch = lines.some((l, idx) => idx < i && l.includes('eliminado pelo desafio'));
+        if (!deadMatch) {
+          violations.push(`[Regra] Assassinato resolveu SEM oferecer bloqueio ao alvo após desafio provado. Linha: "${line}"`);
+        }
+      }
+      assassinProvenPending  = false;
+      blockOfferedAfterProof = false;
+    }
+
+    // ── 4.9 INVARIANTE: Bloqueio de Ajuda Externa falhou → deve reiniciar fase ──
+    if (line.includes('O bloqueio falhou! A fase de bloqueio será reiniciada')) {
+      const isForeignAid = lines.slice(0, i).reverse().find(l => l.includes('📢') && l.includes('Ajuda Externa'));
+      if (isForeignAid) {
+        // Verifica se a linha seguinte (ou próxima relevante) é o restart
+        const nextRelevant = lines[i + 1] || '';
+        if (!nextRelevant.includes('Reiniciando fase de bloqueio')) {
+          violations.push(`[Regra] Bloqueio de Ajuda Externa falhou mas a fase não foi reiniciada corretamente. Linha: "${line}"`);
+        }
+      }
+    }
+
+    // Limpa o estado em caso de fim de jogo ou bloqueio bem-sucedido
+    if (line.includes('FIM DE JOGO') ||
+        line.includes('O bloqueio de') ||
+        line.includes('O bloqueio teve sucesso') ||
+        line.includes('eliminado pelo desafio')) {
+      assassinProvenPending  = false;
+      blockOfferedAfterProof = false;
+      pendingAction = null; // Fim de jogo resolve qualquer pendência
     }
   }
 
