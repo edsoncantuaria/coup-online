@@ -193,6 +193,8 @@ interface SfxSlot {
 let INITIALIZED = false;
 let MUTED = false;
 let MASTER_VOLUME = 1;
+/** Volume dos efeitos (0–1), independente da música. */
+let SFX_VOLUME = 1;
 
 // ─── BGM (música de fundo) ──────────────────────────────────────────────
 export type MusicTrack = 'menu' | 'game';
@@ -277,7 +279,10 @@ function applyVariation(
   const jitterVol = rand(0.9, 1.0);
   voice.player.volume = Math.max(
     0,
-    Math.min(1, cfg.baseVolume * jitterVol * volumeScale * MASTER_VOLUME),
+    Math.min(
+      1,
+      cfg.baseVolume * jitterVol * volumeScale * MASTER_VOLUME * SFX_VOLUME,
+    ),
   );
   if (cfg.pitchVariation) {
     const rate = rand(0.96, 1.04);
@@ -376,6 +381,14 @@ export function getMasterVolume(): number {
   return MASTER_VOLUME;
 }
 
+export function setSfxVolume(v: number): void {
+  SFX_VOLUME = Math.max(0, Math.min(1, v));
+}
+
+export function getSfxVolume(): number {
+  return SFX_VOLUME;
+}
+
 interface PlayOptions {
   /** Força o volume (multiplicado em cima do base + master). 1 = normal. */
   volume?: number;
@@ -393,7 +406,7 @@ interface PlayOptions {
  *  - todas as voices estão em uso e não há uma livre
  */
 export function playSfx(key: SfxKey, opts: PlayOptions = {}): void {
-  if (MUTED) return;
+  if (MUTED || SFX_VOLUME < 0.001) return;
   if (!INITIALIZED) void initAudio();
 
   const slot = ensureSlot(key);
@@ -468,7 +481,7 @@ export function stopAllSfx(): void {
 
 /** Inicia um som em loop (só funciona com chaves `loopable`). */
 export function startLoop(key: SfxKey): void {
-  if (MUTED) return;
+  if (MUTED || SFX_VOLUME < 0.001) return;
   if (!INITIALIZED) void initAudio();
 
   const slot = ensureSlot(key);

@@ -6,6 +6,9 @@ const KEYS = {
   matchHistory: '@coup/match_history_v1',
   resumeSnapshot: '@coup/resume_v1',
   difficulty: '@coup/difficulty_v1',
+  audioSfxVol: '@coup/audio_sfx_vol',
+  audioMusicVol: '@coup/audio_music_vol',
+  notifyInvites: '@coup/notify_invites',
 };
 
 /**
@@ -60,6 +63,55 @@ export const storage = {
   async setMuted(muted: boolean): Promise<void> {
     try {
       await AsyncStorage.setItem(KEYS.muted, muted ? '1' : '0');
+    } catch {
+      /* ignora */
+    }
+  },
+  async getAudioSfxVol(): Promise<number> {
+    try {
+      const v = await AsyncStorage.getItem(KEYS.audioSfxVol);
+      if (v == null) return 1;
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 1;
+    } catch {
+      return 1;
+    }
+  },
+  async setAudioSfxVol(vol: number): Promise<void> {
+    try {
+      await AsyncStorage.setItem(KEYS.audioSfxVol, String(vol));
+    } catch {
+      /* ignora */
+    }
+  },
+  async getAudioMusicVol(): Promise<number> {
+    try {
+      const v = await AsyncStorage.getItem(KEYS.audioMusicVol);
+      if (v == null) return 1;
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 1;
+    } catch {
+      return 1;
+    }
+  },
+  async setAudioMusicVol(vol: number): Promise<void> {
+    try {
+      await AsyncStorage.setItem(KEYS.audioMusicVol, String(vol));
+    } catch {
+      /* ignora */
+    }
+  },
+  async getNotifyInvites(): Promise<boolean> {
+    try {
+      const v = await AsyncStorage.getItem(KEYS.notifyInvites);
+      return v === '1';
+    } catch {
+      return false;
+    }
+  },
+  async setNotifyInvites(on: boolean): Promise<void> {
+    try {
+      await AsyncStorage.setItem(KEYS.notifyInvites, on ? '1' : '0');
     } catch {
       /* ignora */
     }

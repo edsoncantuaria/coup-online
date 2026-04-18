@@ -35,21 +35,21 @@ export default function ActionPanel({
       id: 'income',
       label: 'Renda',
       icon: Coins,
-      description: '+1 moeda',
+      description: '+1',
       cost: 0,
     },
     {
       id: 'foreign_aid',
-      label: 'Ajuda Estrangeira',
+      label: 'Ajuda ext.',
       icon: Globe,
-      description: '+2 moedas · bloqueável',
+      description: '+2',
       cost: 0,
     },
     {
       id: 'coup',
       label: 'Golpe',
       icon: Skull,
-      description: 'Imbloqueável · inevitável',
+      description: '−7',
       cost: 7,
     },
   ];
@@ -59,28 +59,28 @@ export default function ActionPanel({
       id: 'tax',
       label: 'Taxar',
       icon: Crown,
-      roleLabel: 'Duque · +3 moedas',
+      roleLabel: 'Duque · +3',
       cost: 0,
     },
     {
       id: 'assassinate',
       label: 'Assassinar',
       icon: Sword,
-      roleLabel: 'Assassino · −1 carta do alvo',
+      roleLabel: 'Assassino · −3',
       cost: 3,
     },
     {
       id: 'steal',
       label: 'Roubar',
       icon: Ship,
-      roleLabel: 'Capitão · 2 moedas do alvo',
+      roleLabel: 'Capitão · +2',
       cost: 0,
     },
     {
       id: 'exchange',
       label: 'Trocar',
       icon: RefreshCw,
-      roleLabel: 'Embaixador · troca cartas',
+      roleLabel: 'Embaix. · deck',
       cost: 0,
     },
   ];
@@ -97,36 +97,24 @@ export default function ActionPanel({
     return false;
   };
 
-  // Preview de risco: quem pode contestar/bloquear
-  const plural = (n: number, one: string, many: string) =>
-    n === 1 ? one : many;
   const riskByAction: Record<string, string | undefined> = {
     income: undefined,
     foreign_aid: aliveOpponents
-      ? `${aliveOpponents} pode${aliveOpponents > 1 ? 'm' : ''} bloquear (Duque)`
+      ? `${aliveOpponents} bloq. Duque`
       : undefined,
     coup: undefined,
-    tax: aliveOpponents
-      ? `${aliveOpponents} ${plural(aliveOpponents, 'pode contestar', 'podem contestar')}`
-      : undefined,
-    assassinate: aliveOpponents
-      ? `Contestável · bloqueio de Condessa`
-      : undefined,
-    steal: aliveOpponents
-      ? `Contestável · alvo bloqueia c/ Capitão/Embaix.`
-      : undefined,
-    exchange: aliveOpponents
-      ? `${aliveOpponents} ${plural(aliveOpponents, 'pode contestar', 'podem contestar')}`
-      : undefined,
+    tax: aliveOpponents ? `${aliveOpponents} contest.` : undefined,
+    assassinate: aliveOpponents ? 'Condessa bloq.' : undefined,
+    steal: aliveOpponents ? 'Cap./Emb. bloq.' : undefined,
+    exchange: aliveOpponents ? `${aliveOpponents} contest.` : undefined,
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.headerBox}>
-        <ScrollText color={Theme.colors.textSecondary} size={14} />
+        <ScrollText color={Theme.colors.textSecondary} size={12} />
         <Text style={styles.header}>AÇÕES</Text>
       </View>
-      <Text style={styles.subheader}>Escolha uma ação para seu turno.</Text>
 
       <View style={styles.scrollWrapper}>
       <ScrollView
@@ -138,7 +126,7 @@ export default function ActionPanel({
         nestedScrollEnabled
       >
 
-        <Text style={styles.sectionLabel}>AÇÕES BÁSICAS</Text>
+        <Text style={styles.sectionLabel}>BÁSICAS</Text>
         <View style={styles.group}>
           {basicActions.map((a) => (
             <ActionButton
@@ -156,9 +144,9 @@ export default function ActionPanel({
         </View>
 
         <View style={styles.bluffHeader}>
-          <Text style={styles.sectionLabel}>AÇÕES DE PERSONAGEM</Text>
+          <Text style={styles.sectionLabel}>PERSONAGEM</Text>
           <View style={styles.bluffBadge}>
-            <Text style={styles.bluffBadgeText}>PODE BLEFAR</Text>
+            <Text style={styles.bluffBadgeText}>BLEFE</Text>
           </View>
         </View>
         <View style={styles.group}>
@@ -184,14 +172,13 @@ export default function ActionPanel({
 
 const styles = StyleSheet.create({
   container: {
-    width: 220,
+    width: 168,
     alignSelf: 'stretch',
     backgroundColor: 'rgba(11, 15, 20, 0.68)',
     borderRightWidth: 1,
-    // Gold diet: borda lateral neutra, não mais dourada por padrão.
     borderRightColor: Theme.colors.borderSoft,
-    paddingHorizontal: 12,
-    paddingTop: 12,
+    paddingHorizontal: 8,
+    paddingTop: 8,
     paddingBottom: 0,
     overflow: 'hidden',
     zIndex: 20,
@@ -204,57 +191,50 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 24,
+    paddingBottom: 16,
   },
   headerBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 3,
+    gap: 6,
+    marginBottom: 6,
   },
   header: {
     color: Theme.colors.text,
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '900',
-    letterSpacing: 3,
-  },
-  subheader: {
-    color: Theme.colors.textMuted,
-    fontSize: 9,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-    marginBottom: 10,
+    letterSpacing: 2.2,
   },
   sectionLabel: {
     color: Theme.colors.textSecondary,
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '900',
-    letterSpacing: 2,
-    marginBottom: 8,
-    marginTop: 4,
+    letterSpacing: 1.6,
+    marginBottom: 5,
+    marginTop: 2,
   },
   group: {
-    marginBottom: 10,
+    marginBottom: 6,
   },
   bluffHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 6,
+    marginTop: 2,
   },
   bluffBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
     borderRadius: 4,
     backgroundColor: Theme.colors.bluffSoft,
     borderWidth: 1,
     borderColor: 'rgba(155, 123, 212, 0.35)',
-    marginBottom: 8,
+    marginBottom: 5,
   },
   bluffBadgeText: {
     color: Theme.colors.bluff,
-    fontSize: 7,
+    fontSize: 6.5,
     fontWeight: '900',
-    letterSpacing: 1.2,
+    letterSpacing: 0.8,
   },
 });

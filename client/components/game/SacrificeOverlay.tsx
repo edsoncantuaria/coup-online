@@ -4,10 +4,11 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Dimensions,
   Platform,
-  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -114,12 +115,9 @@ export default function SacrificeOverlay({
       easing: Easing.out(Easing.cubic),
     });
   }, []);
+  // Só opacidade no container: transform no pai quebra scroll/toque em alguns dispositivos.
   const cardStyle = useAnimatedStyle(() => ({
     opacity: entrance.value,
-    transform: [
-      { scale: 0.92 + entrance.value * 0.08 },
-      { translateY: (1 - entrance.value) * 14 },
-    ],
   }));
 
   // Pulsar sutil da borda vermelha imperial — sensação de perigo.
@@ -141,8 +139,13 @@ export default function SacrificeOverlay({
   );
 
   const Icon = REASON_ICON[reason];
-  const screenW = Dimensions.get('window').width;
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const tightLayout = screenW < 620;
+  const modalMaxH = Math.min(
+    screenH * 0.94,
+    screenH - insets.top - insets.bottom - 20,
+  );
 
   return (
     <View style={styles.overlay} pointerEvents="box-none">
@@ -161,7 +164,9 @@ export default function SacrificeOverlay({
         style={StyleSheet.absoluteFillObject}
       />
 
-      <Animated.View style={[styles.card, cardStyle]}>
+      <Animated.View
+        style={[styles.card, { height: modalMaxH, maxHeight: modalMaxH }, cardStyle]}
+      >
         {/* Borda superior vermelha pulsante */}
         <Animated.View style={[styles.topGlow, dangerGlow]}>
           <LinearGradient
@@ -177,10 +182,12 @@ export default function SacrificeOverlay({
         </Animated.View>
 
         <ScrollView
-          style={{ width: '100%' }}
+          style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator
           bounces={false}
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
         >
         {/* Topo: badge de contexto + timer circular */}
         <View style={styles.topRow}>
@@ -325,7 +332,6 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 620,
-    maxHeight: '96%',
     backgroundColor: 'rgba(22, 16, 18, 0.88)',
     borderRadius: 20,
     borderWidth: 1,
@@ -337,10 +343,14 @@ const styles = StyleSheet.create({
     shadowRadius: 32,
     elevation: 16,
   },
+  scrollView: {
+    flex: 1,
+    width: '100%',
+  },
   scrollContent: {
     paddingHorizontal: 18,
     paddingTop: 18,
-    paddingBottom: 16,
+    paddingBottom: 24,
     alignItems: 'center',
   },
   topGlow: {

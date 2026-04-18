@@ -324,10 +324,10 @@ const styles = StyleSheet.create({
   },
   rightDock: {
     position: 'absolute',
-    right: 12,
-    bottom: 6,
+    right: 10,
+    bottom: 14,
     alignItems: 'flex-end',
-    zIndex: 10,
+    zIndex: 12,
   },
 
   coinBox: {
@@ -399,9 +399,9 @@ const styles = StyleSheet.create({
     ...Theme.shadows.premium,
   },
   customCard: {
-    // Protagonistas: +24% em área (90×128 → 112×160)
-    width: 112,
-    height: 160,
+    // Ligeiramente menores para não cobrirem o centro da mesa.
+    width: 104,
+    height: 150,
   },
   cardHalo: {
     position: 'absolute',

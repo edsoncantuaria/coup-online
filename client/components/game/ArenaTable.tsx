@@ -145,13 +145,13 @@ const PlayerNode = ({
     };
   });
 
-  // Halo externo (faz o ativo "respirar" — presença visual).
+  // Halo externo — mais contido para não “vazar” para o centro da mesa.
   const haloStyle = useAnimatedStyle(() => {
     const base = isActing && !isDead ? 1 : 0;
     const val = glow.value * base;
     return {
-      opacity: 0.15 + val * 0.35,
-      transform: [{ scale: 1 + val * 0.18 }],
+      opacity: 0.12 + val * 0.22,
+      transform: [{ scale: 1 + val * 0.09 }],
     };
   });
 
@@ -243,6 +243,8 @@ interface ArenaTableProps {
    * Quando passado, ignora "spotlight" booleano.
    */
   intensity?: 'idle' | 'focus' | 'climax';
+  /** Quando true, o badge central não é desenhado aqui (usa-se TableCenterBadge por cima do HUD). */
+  hideCenterBadge?: boolean;
   onPlayerLongPress?: (player: any) => void;
 }
 
@@ -275,6 +277,7 @@ export default function ArenaTable({
   nextPlayerName,
   spotlight,
   intensity,
+  hideCenterBadge,
   onPlayerLongPress,
 }: ArenaTableProps) {
   const accent = kindColor(statusKind);
@@ -475,8 +478,8 @@ export default function ArenaTable({
               <View style={styles.tableGrain} pointerEvents="none" />
               <View style={styles.tableInnerVignette} pointerEvents="none" />
 
-              {/* Status central */}
-              {!!statusTitle && (
+              {/* Status central — omitido se hideCenterBadge (overlay em [roomId]) */}
+              {!!statusTitle && !hideCenterBadge && (
                 <View
                   style={[
                     styles.centerBadge,
@@ -578,13 +581,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 18,
-    paddingTop: 30,
-    paddingBottom: 20,
+    paddingHorizontal: 14,
+    paddingTop: 22,
+    paddingBottom: 14,
   },
   tableShadow: {
-    width: '92%',
-    height: 270,
+    width: '96%',
+    height: 312,
     ...Theme.shadows.premium,
   },
   tableOuter: {
@@ -753,11 +756,11 @@ const styles = StyleSheet.create({
   },
   avatarHalo: {
     position: 'absolute',
-    top: -6,
-    left: -6,
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    top: -4,
+    left: -4,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
     borderWidth: 1,
     borderColor: Theme.colors.gold,
     backgroundColor: 'rgba(198, 161, 91, 0.06)',

@@ -19,7 +19,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Theme } from '../../constants/Theme';
 
-const PANEL_WIDTH = 280;
+const PANEL_WIDTH = 248;
 
 interface LogPanelProps {
   logs: string[];

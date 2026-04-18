@@ -30,7 +30,9 @@ import { buildStatusInfo } from '../../utils/statusBuilder';
 import ActionPanel from '../../components/game/ActionPanel';
 import LogPanel from '../../components/game/LogPanel';
 import ArenaTable from '../../components/game/ArenaTable';
+import TableCenterBadge from '../../components/game/TableCenterBadge';
 import PlayerHUD from '../../components/game/PlayerHUD';
+import GameSettingsModal from '../../components/game/GameSettingsModal';
 import RevealOverlay from '../../components/game/RevealOverlay';
 import LossRevealOverlay from '../../components/game/LossRevealOverlay';
 import ResolvedBanner from '../../components/game/ResolvedBanner';
@@ -127,6 +129,7 @@ export default function GameScreen() {
     message: '',
   });
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Fecha modais locais (confirmação de ação, aviso de 10 moedas, target picker)
   // sempre que a fase deixar de ser 'action' OU o turno sair de mim. Evita
@@ -516,8 +519,9 @@ export default function GameScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.settingsBtn}
-            onPress={() => setShowExitConfirm(true)}
+            onPress={() => setShowSettings(true)}
             activeOpacity={0.7}
+            accessibilityLabel="Configurações"
           >
             <Settings color={Theme.colors.textSecondary} size={15} />
           </TouchableOpacity>
@@ -550,6 +554,7 @@ export default function GameScreen() {
         {/* Arena central com jogadores */}
         <View style={styles.arenaContainer}>
           <ArenaTable
+            hideCenterBadge
             players={others}
             currentPlayerId={currentPlayerId}
             waitingForResponseId={
@@ -641,30 +646,29 @@ export default function GameScreen() {
             }}
           />
 
+          {/* Centro da mesa acima das cartas — leitura imersiva */}
+          <TableCenterBadge
+            statusTitle={statusInfo.title}
+            statusSubtitle={statusInfo.subtitle}
+            statusKind={statusInfo.kind}
+            turnTimer={
+              (phase === 'challenge' || phase === 'block') &&
+              waitingForResponseIndex !== null &&
+              players[waitingForResponseIndex]?.id === myId
+                ? null
+                : turnTimer
+            }
+            transitioning={transitioning}
+            transitionRemaining={transitionRemaining}
+            nextPlayerName={
+              transitioning
+                ? players.find((p) => p.id === currentPlayerId)?.name || null
+                : null
+            }
+          />
+
           {/* Reveal central de carta provada / blefe */}
           <RevealOverlay reveal={lastReveal} />
-
-          {/* Modal AAA de sacrif\u00edcio (perda de influ\u00eancia do humano) */}
-          {phase === 'losing_influence' &&
-            losingInfluenceId === myId &&
-            me && (
-              <SacrificeOverlay
-                cards={me.cards || []}
-                reason={(losingContext?.reason as any) || 'coup'}
-                causedByName={(() => {
-                  const cid = losingContext?.causedByPlayerId;
-                  if (!cid) return null;
-                  const p = players.find((pp) => pp.id === cid);
-                  return p?.name || null;
-                })()}
-                timer={turnTimer}
-                maxTimer={30}
-                onPick={(role) => {
-                  hapticHeavy();
-                  useGameState.getState().selectInfluence(role);
-                }}
-              />
-            )}
 
           {/* Reveal central de influ\u00eancia perdida */}
           <LossRevealOverlay loss={lastLoss} />
@@ -682,6 +686,30 @@ export default function GameScreen() {
         <LogPanel logs={logs} />
       </View>
 
+      {/* Sacrifício: fora da arena — arenaContainer tem overflow:hidden e cortava o modal */}
+      {phase === 'losing_influence' &&
+        losingInfluenceId === myId &&
+        me && (
+          <View style={styles.sacrificeLayer} pointerEvents="box-none">
+            <SacrificeOverlay
+              cards={me.cards || []}
+              reason={(losingContext?.reason as any) || 'coup'}
+              causedByName={(() => {
+                const cid = losingContext?.causedByPlayerId;
+                if (!cid) return null;
+                const p = players.find((pp) => pp.id === cid);
+                return p?.name || null;
+              })()}
+              timer={turnTimer}
+              maxTimer={30}
+              onPick={(role) => {
+                hapticHeavy();
+                useGameState.getState().selectInfluence(role);
+              }}
+            />
+          </View>
+        )}
+
       <InvalidActionToast
         data={invalidToast}
         onDismiss={() => setInvalidToast(null)}
@@ -695,6 +723,11 @@ export default function GameScreen() {
       <RulesView
         visible={showRules}
         onClose={() => setShowRules(false)}
+      />
+
+      <GameSettingsModal
+        visible={showSettings}
+        onClose={() => setShowSettings(false)}
       />
 
       {/* Confirmação de Saída */}
@@ -1195,6 +1228,13 @@ export default function GameScreen() {
 
 const styles = StyleSheet.create({
   gameContainer: { flex: 1, backgroundColor: Theme.colors.background },
+
+  /** Cobre a tela inteira; não pode ficar dentro de arenaContainer (overflow:hidden). */
+  sacrificeLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9600,
+    elevation: 24,
+  },
 
   topBar: {
     flexDirection: 'row',

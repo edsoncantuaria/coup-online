@@ -89,8 +89,8 @@ export default function ActionButton({
         >
           <Icon
             color={disabled ? Theme.colors.textMuted : accentColor}
-            size={22}
-            strokeWidth={2}
+            size={18}
+            strokeWidth={1.85}
           />
         </Animated.View>
 
@@ -124,7 +124,7 @@ export default function ActionButton({
         ) : (
           <ChevronRight
             color={disabled ? Theme.colors.textMuted : Theme.colors.textSecondary}
-            size={14}
+            size={12}
           />
         )}
       </Pressable>
@@ -136,21 +136,21 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    borderRadius: Theme.radius.md,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+    borderRadius: Theme.radius.sm,
     borderWidth: 1,
     backgroundColor: 'rgba(22, 29, 39, 0.72)',
-    gap: 12,
-    marginBottom: 8,
+    gap: 8,
+    marginBottom: 5,
   },
   disabled: {
     opacity: 0.4,
   },
   iconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -160,26 +160,26 @@ const styles = StyleSheet.create({
   },
   label: {
     color: Theme.colors.text,
-    fontSize: 12,
+    fontSize: 10.5,
     fontWeight: '900',
-    letterSpacing: 1.3,
+    letterSpacing: 0.8,
   },
   description: {
     color: Theme.colors.textSecondary,
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '600',
-    letterSpacing: 0.4,
-    marginTop: 2,
+    letterSpacing: 0.2,
+    marginTop: 1,
   },
   disabledText: {
     color: Theme.colors.textMuted,
   },
   risk: {
     color: Theme.colors.imperialRed,
-    fontSize: 8.5,
+    fontSize: 7.5,
     fontWeight: '700',
-    letterSpacing: 0.4,
-    marginTop: 2,
+    letterSpacing: 0.2,
+    marginTop: 1,
     opacity: 0.85,
   },
   costBadge: {

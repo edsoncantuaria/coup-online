@@ -31,7 +31,14 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-notifications",
+        {
+          "sounds": [],
+          "enableBackgroundRemoteNotifications": false
+        }
+      ]
     ],
     "extra": {
       "router": {},
