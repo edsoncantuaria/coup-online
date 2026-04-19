@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type ViewStyle } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -46,7 +46,7 @@ function Particle({
       { translateY: t.value * dy },
       { rotate: `${t.value * 360}deg` },
       { scale: 0.5 + t.value * 0.6 },
-    ],
+    ] as NonNullable<ViewStyle['transform']>,
   }));
 
   return (

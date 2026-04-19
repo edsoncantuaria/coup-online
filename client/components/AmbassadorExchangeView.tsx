@@ -5,6 +5,7 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
+  type ViewStyle,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -175,7 +176,7 @@ function FlippingCard({
         { rotateY: `${rotate}deg` },
         { rotateZ: `${tilt}deg` },
         { translateY },
-      ],
+      ] as NonNullable<ViewStyle['transform']>,
     };
   });
 

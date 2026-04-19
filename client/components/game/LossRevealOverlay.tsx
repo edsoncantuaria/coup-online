@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, type ViewStyle } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -65,7 +65,9 @@ export default function LossRevealOverlay({ loss }: LossRevealOverlayProps) {
 
   const style = useAnimatedStyle(() => ({
     opacity: opacity.value,
-    transform: [{ scale: scale.value }, { rotate: `${rotate.value}deg` }],
+    transform: [{ scale: scale.value }, { rotate: `${rotate.value}deg` }] as NonNullable<
+      ViewStyle['transform']
+    >,
   }));
 
   if (!visible || !local) return null;

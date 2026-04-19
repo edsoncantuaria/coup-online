@@ -16,7 +16,7 @@ describe('validateAction — fase e turno', () => {
     e.getState().phase = 'challenge';
     const r = e.validateAction('a', { type: 'income', source: 'a' });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/fase/i);
+    if (r.ok === false) expect(r.reason).toMatch(/fase/i);
   });
 
   it('rejeita quando não é o jogador da vez', () => {
@@ -24,7 +24,7 @@ describe('validateAction — fase e turno', () => {
     expect(e.getCurrentPlayer().id).toBe('a');
     const r = e.validateAction('b', { type: 'income', source: 'b' });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/turno/i);
+    if (r.ok === false) expect(r.reason).toMatch(/turno/i);
   });
 
   it('rejeita jogador eliminado', () => {
@@ -35,7 +35,7 @@ describe('validateAction — fase e turno', () => {
     });
     const r = e.validateAction('a', { type: 'income', source: 'a' });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/eliminad/i);
+    if (r.ok === false) expect(r.reason).toMatch(/eliminad/i);
   });
 });
 
@@ -62,7 +62,7 @@ describe('validateAction — custos', () => {
       target: 'b',
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/7/);
+    if (r.ok === false) expect(r.reason).toMatch(/7/);
   });
 
   it('rejeita assassinato com menos de 3 moedas', () => {
@@ -74,7 +74,7 @@ describe('validateAction — custos', () => {
       target: 'b',
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/3/);
+    if (r.ok === false) expect(r.reason).toMatch(/3/);
   });
 });
 
@@ -138,7 +138,7 @@ describe('validateAction — alvos', () => {
       target: 'b',
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/moedas/i);
+    if (r.ok === false) expect(r.reason).toMatch(/moedas/i);
   });
 });
 
@@ -150,7 +150,7 @@ describe('validateAction — tipo de ação', () => {
       source: 'a',
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/desconhecida/i);
+    if (r.ok === false) expect(r.reason).toMatch(/desconhecida/i);
   });
 });
 

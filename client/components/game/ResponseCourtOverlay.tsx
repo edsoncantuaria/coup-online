@@ -7,6 +7,7 @@ import {
   ScrollView,
   Dimensions,
   Platform,
+  type ViewStyle,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -163,7 +164,7 @@ export default function ResponseCourtOverlay({
     transform: [
       { scale: 0.94 + entrance.value * 0.06 },
       { translateY: (1 - entrance.value) * 10 },
-    ],
+    ] as NonNullable<ViewStyle['transform']>,
   }));
 
   // Ator principal em destaque varia conforme o modo.

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, type ViewStyle } from 'react-native';
 import { Coins } from 'lucide-react-native';
 import Animated, {
   useSharedValue,
@@ -93,7 +93,7 @@ function HeroCard({
         translateY:
           (highlight && !isFlipped ? -4 : 0) + jitter.value * -1.2,
       },
-    ],
+    ] as NonNullable<ViewStyle['transform']>,
   }));
 
   const glowStyle = useAnimatedStyle(() => ({

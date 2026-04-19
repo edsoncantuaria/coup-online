@@ -384,7 +384,7 @@ export class CoupEngine {
 
   public handleAction(playerId: string, action: Action) {
     const check = this.validateAction(playerId, action);
-    if (!check.ok) {
+    if (check.ok === false) {
       this.addLog(`⛔ Ação inválida: ${check.reason}`);
       this.state.lastInvalid = {
         reason: check.reason,
