@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    include: ['engine/**/*.test.ts'],
+    include: ['engine/**/*.test.ts', 'campaign/**/*.test.ts'],
     /** Simulações longas (várias sementes × jogadores). */
     testTimeout: 30_000,
     hookTimeout: 15_000,

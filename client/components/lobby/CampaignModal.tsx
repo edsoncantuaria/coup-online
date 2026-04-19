@@ -21,7 +21,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Theme } from '../../constants/Theme';
 import { RANKS } from '../../campaign/ranks';
 import { clampRankIndex } from '../../campaign/progress';
-import { getCampaignProgress } from '../../utils/storage';
+import { getCampaignProgress, getPendingNextRunBonus } from '../../utils/storage';
+import { NEXT_RUN_BONUS_DEFS } from '../../campaign/nextRun';
+import type { NextRunBonusId } from '../../campaign/types';
 import type { CampaignProgressState } from '../../campaign/types';
 import { CHALLENGE_DEFS } from '../../campaign/challenges';
 
@@ -41,13 +43,18 @@ export default function CampaignModal({
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState<CampaignProgressState | null>(null);
+  const [pendingBonus, setPendingBonus] = useState<NextRunBonusId | null>(null);
 
   useEffect(() => {
     if (!visible) return;
     setLoading(true);
     (async () => {
-      const p = await getCampaignProgress();
+      const [p, bonus] = await Promise.all([
+        getCampaignProgress(),
+        getPendingNextRunBonus(),
+      ]);
       setProgress(p);
+      setPendingBonus(bonus);
       setLoading(false);
     })();
   }, [visible]);
@@ -110,7 +117,24 @@ export default function CampaignModal({
                     ? ' · Mestre da Corte'
                     : ''}
                 </Text>
+                {(progress.winStreak ?? 0) >= 2 && (
+                  <Text style={styles.streakLine}>
+                    Sequência: {progress.winStreak ?? 0} vitórias
+                  </Text>
+                )}
               </View>
+
+              {pendingBonus && (
+                <View style={styles.pendingBonus}>
+                  <Text style={styles.pendingBonusKicker}>FAVOR PENDENTE</Text>
+                  <Text style={styles.pendingBonusTitle}>
+                    {NEXT_RUN_BONUS_DEFS[pendingBonus].title}
+                  </Text>
+                  <Text style={styles.pendingBonusBody}>
+                    {NEXT_RUN_BONUS_DEFS[pendingBonus].description}
+                  </Text>
+                </View>
+              )}
 
               <View style={styles.opponentsBlock}>
                 <View style={styles.blockTitleRow}>
@@ -268,6 +292,36 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     marginTop: 6,
+  },
+  streakLine: {
+    color: Theme.colors.goldSoft,
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  pendingBonus: {
+    padding: 12,
+    borderRadius: Theme.radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(198, 161, 91, 0.45)',
+    backgroundColor: 'rgba(198, 161, 91, 0.08)',
+    gap: 4,
+  },
+  pendingBonusKicker: {
+    color: Theme.colors.gold,
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  pendingBonusTitle: {
+    color: Theme.colors.text,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  pendingBonusBody: {
+    color: Theme.colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
   },
   opponentsBlock: {
     padding: 12,

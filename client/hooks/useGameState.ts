@@ -14,6 +14,8 @@ import {
   loadResumeSnapshot,
   clearResumeSnapshot,
   getCampaignProgress,
+  getPendingNextRunBonus,
+  setPendingNextRunBonus,
   RESUME_SNAPSHOT_VERSION,
   type OfflineResumeSnapshot,
   isOfflineResumeSnapshot,
@@ -22,6 +24,7 @@ import { RANKS } from '../campaign/ranks';
 import { clampRankIndex } from '../campaign/progress';
 import { pickChallengesForRun } from '../campaign/challenges';
 import type { CampaignRunState } from '../campaign/types';
+import { campaignRoleLabel } from '../campaign/roleLabels';
 
 // Janela global entre transições para dar "fôlego" visual
 export const TRANSITION_MS = 5000;
@@ -467,12 +470,17 @@ export const useGameState = create<GameState>((set, get) => {
     const rank = RANKS[idx];
     if (!rank) return;
 
+    const pendingBonus = await getPendingNextRunBonus();
+    await setPendingNextRunBonus(null);
+
     const challengeIds = pickChallengesForRun(2);
-    const campaignRun: CampaignRunState = {
+    let campaignRun: CampaignRunState = {
       rankIndex: idx,
       rankId: rank.id,
       challengeIds,
       tally: { income: 0 },
+      activeBonus: pendingBonus ?? undefined,
+      intelHint: null,
     };
 
     const engine = new CoupEngine('offline-room');
@@ -486,6 +494,31 @@ export const useGameState = create<GameState>((set, get) => {
     });
     engine.startGame();
     const state = engine.getState();
+
+    if (pendingBonus === 'coffer') {
+      const human = state.players.find((p) => p.id === 'human-1');
+      if (human) human.coins += 1;
+    }
+    if (pendingBonus === 'high_stakes') {
+      state.players.forEach((p) => {
+        if (p.isBot) p.coins += 1;
+      });
+    }
+    if (pendingBonus === 'informant') {
+      const bots = state.players.filter((p) => p.isBot && p.cards?.length);
+      if (bots.length > 0) {
+        const bot = bots[Math.floor(Math.random() * bots.length)]!;
+        const card = bot.cards[Math.floor(Math.random() * bot.cards.length)]!;
+        campaignRun = {
+          ...campaignRun,
+          intelHint: {
+            botName: bot.name,
+            role: campaignRoleLabel(card.role),
+          },
+        };
+      }
+    }
+
     set({
       localEngine: engine,
       isOffline: true,

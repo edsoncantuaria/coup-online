@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -49,12 +49,16 @@ import {
   clearResumeSnapshot,
   getCampaignProgress,
   setCampaignProgress,
+  setPendingNextRunBonus,
 } from '../../utils/storage';
+import { RANKS } from '../../campaign/ranks';
+import { clampRankIndex } from '../../campaign/progress';
 import { resolveCampaignRecap } from '../../campaign/recap';
 import type { CampaignOutro } from '../../campaign/recap';
 import type { PlayerStats } from '../../engine/types';
 import { CHALLENGE_DEFS } from '../../campaign/challenges';
-import type { ChallengeId } from '../../campaign/types';
+import { NEXT_RUN_BONUS_DEFS } from '../../campaign/nextRun';
+import type { ChallengeId, NextRunBonusId } from '../../campaign/types';
 import { Theme } from '../../constants/Theme';
 import {
   hapticLight,
@@ -131,6 +135,21 @@ export default function GameScreen() {
   const matchStats = useGameState((state) => state.matchStats);
   const winnerId = useGameState((state) => state.winnerId);
   const campaignRun = useGameState((state) => state.campaignRun);
+
+  const [showIntelModal, setShowIntelModal] = useState(false);
+  const intelKeyRef = useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (!campaignRun?.intelHint) {
+      intelKeyRef.current = null;
+      return;
+    }
+    const key = `${campaignRun.intelHint.botName}:${campaignRun.intelHint.role}`;
+    if (intelKeyRef.current !== key) {
+      intelKeyRef.current = key;
+      setShowIntelModal(true);
+    }
+  }, [campaignRun?.intelHint]);
 
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [showTargetPicker, setShowTargetPicker] = useState(false);
@@ -610,9 +629,77 @@ export default function GameScreen() {
                 </Text>
               </View>
             ))}
+            {campaignRun.activeBonus ? (
+              <View style={[styles.campaignChip, styles.campaignChipBonus]}>
+                <Text style={styles.campaignChipText}>
+                  Favor:{' '}
+                  {
+                    NEXT_RUN_BONUS_DEFS[campaignRun.activeBonus as NextRunBonusId]
+                      .title
+                  }
+                </Text>
+              </View>
+            ) : null}
           </ScrollView>
         </View>
       )}
+
+      {campaignRun &&
+        phase !== 'game_over' &&
+        (() => {
+          const rankDef = RANKS[clampRankIndex(campaignRun.rankIndex)];
+          const bots = players.filter((p: any) => p.isBot);
+          if (!rankDef || bots.length === 0) return null;
+          return (
+            <View style={styles.rivalsStrip}>
+              <Text style={styles.rivalsStripKicker}>RIVAIS DESTE POSTO</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.rivalsChipsRow}
+              >
+                {bots.map((p: any, i: number) => (
+                  <View key={p.id} style={styles.rivalChip}>
+                    <Text style={styles.rivalName} numberOfLines={1}>
+                      {p.name}
+                    </Text>
+                    <Text style={styles.rivalArch} numberOfLines={2}>
+                      {rankDef.opponentArchetypes[i] ?? '—'}
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          );
+        })()}
+
+      {campaignRun?.intelHint &&
+        showIntelModal &&
+        phase !== 'game_over' && (
+          <View style={styles.intelOverlay} pointerEvents="box-none">
+            <View style={styles.intelCard}>
+              <Text style={styles.intelKicker}>INFORMANTE</Text>
+              <Text style={styles.intelBody}>
+                Um sussurro na galeria:{' '}
+                <Text style={styles.intelEmphasis}>
+                  {campaignRun.intelHint.botName}
+                </Text>{' '}
+                pode carregar{' '}
+                <Text style={styles.intelEmphasis}>
+                  {campaignRun.intelHint.role}
+                </Text>{' '}
+                na manga.
+              </Text>
+              <TouchableOpacity
+                style={styles.intelBtn}
+                onPress={() => setShowIntelModal(false)}
+                accessibilityRole="button"
+              >
+                <Text style={styles.intelBtnText}>ENTENDI</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
       {/* LAYOUT PRINCIPAL: 3 colunas */}
       <View
@@ -873,6 +960,11 @@ export default function GameScreen() {
             router.replace('/');
           }}
           campaignOutro={campaignOutro}
+          onPickNextAscensionBonus={
+            campaignOutro
+              ? (id) => void setPendingNextRunBonus(id)
+              : undefined
+          }
         />
       )}
 
@@ -1356,6 +1448,100 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  campaignChipBonus: {
+    borderColor: 'rgba(198, 161, 91, 0.55)',
+    backgroundColor: 'rgba(198, 161, 91, 0.1)',
+  },
+
+  rivalsStrip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.colors.borderSoft,
+    backgroundColor: 'rgba(8, 12, 18, 0.92)',
+    zIndex: 34,
+    gap: 6,
+  },
+  rivalsStripKicker: {
+    color: Theme.colors.textMuted,
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  rivalsChipsRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 8,
+    paddingRight: 8,
+  },
+  rivalChip: {
+    maxWidth: 160,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Theme.colors.goldLine,
+    backgroundColor: Theme.colors.surface,
+  },
+  rivalName: {
+    color: Theme.colors.text,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  rivalArch: {
+    color: Theme.colors.textSecondary,
+    fontSize: 9,
+    fontWeight: '600',
+    marginTop: 2,
+    lineHeight: 12,
+  },
+
+  intelOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    zIndex: 2500,
+  },
+  intelCard: {
+    maxWidth: 400,
+    width: '100%',
+    padding: 18,
+    borderRadius: Theme.radius.md,
+    borderWidth: 1,
+    borderColor: Theme.colors.gold,
+    backgroundColor: Theme.colors.surface,
+  },
+  intelKicker: {
+    color: Theme.colors.gold,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 3,
+    marginBottom: 10,
+  },
+  intelBody: {
+    color: Theme.colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  intelEmphasis: {
+    color: Theme.colors.text,
+    fontWeight: '900',
+  },
+  intelBtn: {
+    marginTop: 16,
+    alignSelf: 'flex-start',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 8,
+    backgroundColor: Theme.colors.gold,
+  },
+  intelBtnText: {
+    color: '#0B0F14',
+    fontWeight: '900',
+    letterSpacing: 1,
   },
 
   /** Cobre a tela inteira; não pode ficar dentro de arenaContainer (overflow:hidden). */

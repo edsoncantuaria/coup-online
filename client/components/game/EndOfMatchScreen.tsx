@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,11 @@ import {
 } from 'lucide-react-native';
 import { Theme } from '../../constants/Theme';
 import type { CampaignOutro } from '../../campaign/recap';
+import {
+  ALL_NEXT_RUN_BONUS_IDS,
+  NEXT_RUN_BONUS_DEFS,
+} from '../../campaign/nextRun';
+import type { NextRunBonusId } from '../../campaign/types';
 
 interface EndOfMatchProps {
   visible: boolean;
@@ -33,6 +38,8 @@ interface EndOfMatchProps {
   onReplay: () => void;
   /** Resumo da Ascensão na Corte (modo campanha offline) */
   campaignOutro?: CampaignOutro | null;
+  /** Escolha de favor para a próxima Ascensão (só campanha). */
+  onPickNextAscensionBonus?: (id: NextRunBonusId | null) => void;
 }
 
 interface RankedEntry {
@@ -89,7 +96,9 @@ export default function EndOfMatchScreen({
   onHome,
   onReplay,
   campaignOutro,
+  onPickNextAscensionBonus,
 }: EndOfMatchProps) {
+  const [pickedBonus, setPickedBonus] = useState<NextRunBonusId | null>(null);
   const ranked = useMemo<RankedEntry[]>(() => {
     if (!matchStats?.perPlayer) return [];
     return players
@@ -171,6 +180,11 @@ export default function EndOfMatchScreen({
                 <Text style={styles.campaignKicker}>ASCENSÃO NA CORTE</Text>
               </View>
               <Text style={styles.campaignFlavor}>{campaignOutro.flavor}</Text>
+              {campaignOutro.winStreak != null && campaignOutro.winStreak >= 2 && (
+                <Text style={styles.campaignStreak}>
+                  Sequência: {campaignOutro.winStreak} vitórias na Ascensão
+                </Text>
+              )}
               {campaignOutro.promoted && (
                 <Text style={styles.campaignPromo}>
                   ✦ Novo posto na corte desbloqueado
@@ -206,6 +220,35 @@ export default function EndOfMatchScreen({
                   </Text>
                 </View>
               ))}
+            </View>
+          )}
+
+          {campaignOutro && onPickNextAscensionBonus && (
+            <View style={styles.bonusPickBlock}>
+              <Text style={styles.bonusPickKicker}>PRÓXIMA ASCENSÃO</Text>
+              <Text style={styles.bonusPickHint}>
+                Escolha um favor da corte (vale só na próxima partida da
+                campanha).
+              </Text>
+              {ALL_NEXT_RUN_BONUS_IDS.map((id) => {
+                const def = NEXT_RUN_BONUS_DEFS[id];
+                const sel = pickedBonus === id;
+                return (
+                  <TouchableOpacity
+                    key={id}
+                    style={[styles.bonusRow, sel && styles.bonusRowSelected]}
+                    onPress={() => {
+                      const next = sel ? null : id;
+                      setPickedBonus(next);
+                      onPickNextAscensionBonus(next);
+                    }}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.bonusTitle}>{def.title}</Text>
+                    <Text style={styles.bonusDesc}>{def.description}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
 
@@ -468,6 +511,57 @@ const styles = StyleSheet.create({
   },
   challengeTextMuted: {
     color: Theme.colors.textMuted,
+  },
+  campaignStreak: {
+    color: Theme.colors.goldSoft,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginTop: 2,
+  },
+  bonusPickBlock: {
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: Theme.radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(198, 161, 91, 0.35)',
+    backgroundColor: 'rgba(15, 22, 32, 0.6)',
+    gap: 8,
+  },
+  bonusPickKicker: {
+    color: Theme.colors.gold,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  bonusPickHint: {
+    color: Theme.colors.textMuted,
+    fontSize: 11,
+    lineHeight: 16,
+    marginBottom: 4,
+  },
+  bonusRow: {
+    padding: 10,
+    borderRadius: Theme.radius.sm,
+    borderWidth: 1,
+    borderColor: Theme.colors.goldLine,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  bonusRowSelected: {
+    borderColor: Theme.colors.gold,
+    backgroundColor: 'rgba(198, 161, 91, 0.12)',
+  },
+  bonusTitle: {
+    color: Theme.colors.text,
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  bonusDesc: {
+    color: Theme.colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
   },
   summaryRow: {
     flexDirection: 'row',

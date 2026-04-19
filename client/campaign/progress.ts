@@ -5,6 +5,7 @@ export const DEFAULT_CAMPAIGN_PROGRESS: CampaignProgressState = {
   rankIndex: 0,
   winsInRank: 0,
   unlockedRankIds: [],
+  winStreak: 0,
 };
 
 export function clampRankIndex(idx: number): number {
@@ -35,7 +36,12 @@ export function applyWin(
     }
   }
 
-  return { rankIndex, winsInRank, unlockedRankIds: unlocked };
+  return {
+    rankIndex,
+    winsInRank,
+    unlockedRankIds: unlocked,
+    winStreak: prev.winStreak ?? 0,
+  };
 }
 
 /**

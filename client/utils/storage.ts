@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { GameState } from '../engine/types';
-import type { CampaignRunState, CampaignProgressState } from '../campaign/types';
+import type {
+  CampaignRunState,
+  CampaignProgressState,
+  NextRunBonusId,
+} from '../campaign/types';
 import { DEFAULT_CAMPAIGN_PROGRESS } from '../campaign/progress';
 
 const KEYS = {
@@ -14,6 +18,7 @@ const KEYS = {
   notifyInvites: '@coup/notify_invites',
   onboardingSeen: '@coup/onboarding_seen_v1',
   campaignProgress: '@coup/campaign_progress_v1',
+  pendingNextRunBonus: '@coup/pending_next_run_bonus_v1',
 };
 
 /**
@@ -322,6 +327,8 @@ export async function getCampaignProgress(): Promise<CampaignProgressState> {
         rankIndex: parsed.rankIndex,
         winsInRank: parsed.winsInRank,
         unlockedRankIds: parsed.unlockedRankIds,
+        winStreak:
+          typeof parsed.winStreak === 'number' ? parsed.winStreak : 0,
       };
     }
     return { ...DEFAULT_CAMPAIGN_PROGRESS };
@@ -343,6 +350,41 @@ export async function setCampaignProgress(
 export async function resetCampaignProgress(): Promise<void> {
   try {
     await AsyncStorage.removeItem(KEYS.campaignProgress);
+  } catch {
+    /* ignora */
+  }
+}
+
+export async function getPendingNextRunBonus(): Promise<NextRunBonusId | null> {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.pendingNextRunBonus);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { id?: string };
+    if (
+      v?.id === 'coffer' ||
+      v?.id === 'informant' ||
+      v?.id === 'high_stakes'
+    ) {
+      return v.id;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setPendingNextRunBonus(
+  id: NextRunBonusId | null
+): Promise<void> {
+  try {
+    if (id == null) {
+      await AsyncStorage.removeItem(KEYS.pendingNextRunBonus);
+    } else {
+      await AsyncStorage.setItem(
+        KEYS.pendingNextRunBonus,
+        JSON.stringify({ id })
+      );
+    }
   } catch {
     /* ignora */
   }
