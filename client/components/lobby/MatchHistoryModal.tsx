@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Modal,
   View,
@@ -17,19 +17,38 @@ import {
   Target,
   Flame,
   Trash2,
+  Globe,
+  Zap,
 } from 'lucide-react-native';
 import { Theme } from '../../constants/Theme';
-import type {
-  MatchHistoryEntry,
-  HistoryAggregate,
-} from '../../utils/storage';
+import type { MatchHistoryEntry, MatchHistoryMode } from '../../utils/storage';
+import { aggregateHistory } from '../../utils/storage';
 
 interface Props {
   visible: boolean;
   onClose: () => void;
   history: MatchHistoryEntry[];
-  aggregate: HistoryAggregate;
   onClear: () => void;
+}
+
+const MODE_FILTER: { id: MatchHistoryMode | 'all'; label: string }[] = [
+  { id: 'all', label: 'Todas' },
+  { id: 'quick_offline', label: 'Partida rápida' },
+  { id: 'ascension', label: 'Ascensão' },
+  { id: 'multiplayer', label: 'Multijogador' },
+];
+
+function modeBadgeLabel(mode: MatchHistoryMode): string {
+  switch (mode) {
+    case 'quick_offline':
+      return 'RÁPIDA';
+    case 'ascension':
+      return 'ASCENSÃO';
+    case 'multiplayer':
+      return 'ONLINE';
+    default:
+      return '—';
+  }
 }
 
 function fmtDate(ts: number): string {
@@ -52,9 +71,23 @@ export default function MatchHistoryModal({
   visible,
   onClose,
   history,
-  aggregate,
   onClear,
 }: Props) {
+  const [filter, setFilter] = useState<MatchHistoryMode | 'all'>('all');
+
+  const aggregate = useMemo(
+    () => aggregateHistory(history, filter),
+    [history, filter]
+  );
+
+  const filteredList = useMemo(
+    () =>
+      filter === 'all'
+        ? history
+        : history.filter((m) => m.mode === filter),
+    [history, filter]
+  );
+
   const handleClear = () => {
     Alert.alert(
       'Apagar histórico?',
@@ -90,7 +123,29 @@ export default function MatchHistoryModal({
             </TouchableOpacity>
           </View>
 
-          {/* Bloco superior: Agregados */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
+          >
+            {MODE_FILTER.map((opt) => {
+              const sel = filter === opt.id;
+              return (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={[styles.filterChip, sel && styles.filterChipOn]}
+                  onPress={() => setFilter(opt.id)}
+                >
+                  <Text
+                    style={[styles.filterChipText, sel && styles.filterChipTextOn]}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
           <View style={styles.aggregateRow}>
             <BigStat
               value={`${Math.round(aggregate.winRate * 100)}%`}
@@ -121,15 +176,25 @@ export default function MatchHistoryModal({
 
           <View style={styles.aggregateRow}>
             <SmallStat
+              icon={<Zap size={12} color={Theme.colors.gold} />}
+              value={Math.round(aggregate.avgSkillScore).toString()}
+              label="PERF. MÉDIA"
+            />
+            <SmallStat
+              icon={<Crown size={12} color={Theme.colors.goldHigh} />}
+              value={Math.round(aggregate.bestSkillScore).toString()}
+              label="MELHOR PERF."
+            />
+            <SmallStat
               icon={<Flame size={12} color={Theme.colors.imperialRed} />}
               value={
                 aggregate.currentStreak === 0
                   ? '0'
                   : aggregate.currentStreak > 0
-                  ? `${aggregate.currentStreak} VITÓRIAS`
-                  : `${-aggregate.currentStreak} DERROTAS`
+                  ? `${aggregate.currentStreak} VIT.`
+                  : `${-aggregate.currentStreak} DER.`
               }
-              label="SEQUÊNCIA ATUAL"
+              label="SEQUÊNCIA"
             />
             <SmallStat
               icon={<Target size={12} color={Theme.colors.bluff} />}
@@ -139,34 +204,62 @@ export default function MatchHistoryModal({
             <SmallStat
               icon={<Swords size={12} color={Theme.colors.success} />}
               value={String(aggregate.totalChallengesWon)}
-              label="DESAFIOS VENCIDOS"
+              label="DESAF. OK"
             />
             <SmallStat
               icon={<Coins size={12} color={Theme.colors.gold} />}
               value={`${Math.round(aggregate.avgRounds)}R`}
-              label="RODADAS/PARTIDA"
+              label="RODADAS Ø"
             />
             <SmallStat
-              icon={<Crown size={12} color={Theme.colors.gold} />}
+              icon={<Trophy size={12} color={Theme.colors.gold} />}
               value={fmtDuration(aggregate.avgDurationMs)}
-              label="TEMPO MÉDIO"
+              label="TEMPO Ø"
             />
           </View>
 
-          <Text style={styles.sectionLabel}>REGISTROS INDIVIDUAIS</Text>
+          <View style={styles.rankFuture}>
+            <Globe size={14} color={Theme.colors.textMuted} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rankFutureTitle}>RANKING GLOBAL (EM BREVE)</Text>
+              <Text style={styles.rankFutureBody}>
+                A pontuação de performance acima usa pesos fixos no aparelho —
+                pronta para cruzar com partidas online e gerar um ranking justo
+                (ex.: posição 120 entre 1000 jogadores). Isso exigirá conta e
+                servidor; por enquanto o histórico permanece local e verificável.
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.sectionLabel}>REGISTROS</Text>
 
           <ScrollView
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingBottom: 16 }}
             showsVerticalScrollIndicator
           >
-            {history.length === 0 ? (
+            {filteredList.length === 0 ? (
               <Text style={styles.empty}>
-                Ainda sem entradas. Cada batalha é registrada aqui.
+                {history.length === 0
+                  ? 'Ainda sem entradas. Cada batalha é registrada aqui.'
+                  : 'Nenhuma partida neste filtro.'}
               </Text>
             ) : (
-              history.map((m) => (
+              filteredList.map((m) => (
                 <View key={m.id} style={styles.row}>
+                  <View
+                    style={[
+                      styles.modePill,
+                      m.mode === 'ascension' && styles.modeAsc,
+                      m.mode === 'multiplayer' && styles.modeOnline,
+                      m.mode === 'quick_offline' && styles.modeQuick,
+                    ]}
+                  >
+                    <Text style={styles.modePillText}>
+                      {modeBadgeLabel(m.mode)}
+                    </Text>
+                  </View>
+
                   <View
                     style={[
                       styles.resultPill,
@@ -174,7 +267,7 @@ export default function MatchHistoryModal({
                     ]}
                   >
                     <Text style={styles.resultText}>
-                      {m.result === 'win' ? 'VITÓRIA' : 'DERROTA'}
+                      {m.result === 'win' ? 'V' : 'D'}
                     </Text>
                   </View>
 
@@ -184,16 +277,25 @@ export default function MatchHistoryModal({
                       {m.mvp && '  👑 MVP'}
                     </Text>
                     <Text style={styles.rowMeta}>
-                      {fmtDate(m.playedAt)} · {m.opponents} oponentes ·{' '}
-                      {m.rounds}R · {fmtDuration(m.durationMs)}
+                      {fmtDate(m.playedAt)} · {m.opponents} rivais · {m.rounds}R ·{' '}
+                      {fmtDuration(m.durationMs)}
                     </Text>
-                  </View>
-
-                  <View style={styles.rowStats}>
-                    <RowStat label="AÇÕES" value={m.actionsTaken} />
-                    <RowStat label="DES. OK" value={m.challengesWon} />
-                    <RowStat label="BLEFES" value={m.bluffsCaught} />
-                    <RowStat label="BLOQ." value={m.blocksSuccess} />
+                    {m.mode === 'ascension' && m.ascensionRankTitle ? (
+                      <Text style={styles.rowSub}>
+                        Posto: {m.ascensionRankTitle}
+                      </Text>
+                    ) : null}
+                    {m.mode === 'multiplayer' && (m.roomDisplayName || m.roomIdShort) ? (
+                      <Text style={styles.rowSub} numberOfLines={1}>
+                        Sala: {m.roomDisplayName || m.roomIdShort}
+                      </Text>
+                    ) : null}
+                    <Text style={styles.rowDetail}>
+                      Perf. {Math.round(m.skillScore)} · Ações {m.actionsTaken} ·
+                      Des. {m.challengesWon}/{m.challengesMade} · Blefes{' '}
+                      {m.bluffsCaught} · Bloq. {m.blocksSuccess}/{m.blocksMade} ·
+                      Cartas −{m.cardsLost}
+                    </Text>
                   </View>
                 </View>
               ))
@@ -251,19 +353,12 @@ function SmallStat({
   return (
     <View style={styles.smallStat}>
       <View style={styles.smallIcon}>{icon}</View>
-      <View>
-        <Text style={styles.smallValue}>{value}</Text>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.smallValue} numberOfLines={1}>
+          {value}
+        </Text>
         <Text style={styles.smallLabel}>{label}</Text>
       </View>
-    </View>
-  );
-}
-
-function RowStat({ label, value }: { label: string; value: number }) {
-  return (
-    <View style={styles.rowStat}>
-      <Text style={styles.rowStatValue}>{value}</Text>
-      <Text style={styles.rowStatLabel}>{label}</Text>
     </View>
   );
 }
@@ -278,7 +373,7 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '100%',
-    maxWidth: 760,
+    maxWidth: 820,
     maxHeight: '96%',
     borderRadius: Theme.radius.lg,
     backgroundColor: Theme.colors.surface,
@@ -291,7 +386,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   headerText: {
     flexDirection: 'row',
@@ -304,11 +399,63 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 3,
   },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+    paddingRight: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    backgroundColor: Theme.colors.surfaceHigh,
+  },
+  filterChipOn: {
+    borderColor: Theme.colors.gold,
+    backgroundColor: 'rgba(198, 161, 91, 0.12)',
+  },
+  filterChipText: {
+    color: Theme.colors.textMuted,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  filterChipTextOn: {
+    color: Theme.colors.gold,
+  },
   aggregateRow: {
     flexDirection: 'row',
     gap: 8,
     marginBottom: 8,
     flexWrap: 'wrap',
+  },
+  rankFuture: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 10,
+    marginBottom: 8,
+    borderRadius: Theme.radius.sm,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    backgroundColor: 'rgba(11,15,20,0.5)',
+  },
+  rankFutureTitle: {
+    color: Theme.colors.textSecondary,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 2,
+    marginBottom: 4,
+  },
+  rankFutureBody: {
+    color: Theme.colors.textMuted,
+    fontSize: 10,
+    lineHeight: 15,
+    fontWeight: '600',
   },
   bigStat: {
     flex: 1,
@@ -335,7 +482,7 @@ const styles = StyleSheet.create({
   },
   smallStat: {
     flex: 1,
-    minWidth: 120,
+    minWidth: 100,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -371,7 +518,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 2.5,
-    marginTop: 8,
+    marginTop: 4,
     marginBottom: 6,
   },
   empty: {
@@ -384,8 +531,8 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    alignItems: 'flex-start',
+    gap: 8,
     paddingVertical: 8,
     paddingHorizontal: 10,
     borderRadius: Theme.radius.sm,
@@ -394,12 +541,38 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.colors.surfaceHigh,
     marginBottom: 6,
   },
+  modePill: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    minWidth: 56,
+    alignItems: 'center',
+  },
+  modeQuick: {
+    borderColor: Theme.colors.textMuted,
+    backgroundColor: 'rgba(120,130,140,0.15)',
+  },
+  modeAsc: {
+    borderColor: Theme.colors.gold,
+    backgroundColor: 'rgba(198, 161, 91, 0.12)',
+  },
+  modeOnline: {
+    borderColor: '#6B9FD4',
+    backgroundColor: 'rgba(80, 140, 200, 0.12)',
+  },
+  modePillText: {
+    color: Theme.colors.text,
+    fontSize: 7,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
   resultPill: {
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 10,
     borderWidth: 1,
-    minWidth: 60,
+    minWidth: 32,
     alignItems: 'center',
   },
   pillWin: {
@@ -412,12 +585,13 @@ const styles = StyleSheet.create({
   },
   resultText: {
     color: Theme.colors.text,
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '900',
     letterSpacing: 1.5,
   },
   rowMain: {
     flex: 1,
+    minWidth: 0,
   },
   rowTitle: {
     color: Theme.colors.text,
@@ -432,24 +606,18 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginTop: 2,
   },
-  rowStats: {
-    flexDirection: 'row',
-    gap: 8,
+  rowSub: {
+    color: Theme.colors.goldSoft,
+    fontSize: 9,
+    fontWeight: '700',
+    marginTop: 2,
   },
-  rowStat: {
-    alignItems: 'center',
-    minWidth: 40,
-  },
-  rowStatValue: {
-    color: Theme.colors.gold,
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  rowStatLabel: {
+  rowDetail: {
     color: Theme.colors.textMuted,
-    fontSize: 7,
-    fontWeight: '900',
-    letterSpacing: 1.2,
+    fontSize: 8.5,
+    fontWeight: '600',
+    lineHeight: 13,
+    marginTop: 4,
   },
   clearBtn: {
     flexDirection: 'row',

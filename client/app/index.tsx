@@ -550,7 +550,6 @@ export default function LobbyScreen() {
         visible={showHistory}
         onClose={() => setShowHistory(false)}
         history={history}
-        aggregate={aggregate}
         onClear={async () => {
           await clearMatchHistory();
           await reloadHistory();

@@ -105,6 +105,8 @@ export default function CommanderStatsPanel({
                       styles.dot,
                       m.result === 'win' ? styles.dotWin : styles.dotLoss,
                       m.mvp && styles.dotMvp,
+                      m.mode === 'ascension' && styles.dotRingAsc,
+                      m.mode === 'multiplayer' && styles.dotRingOnline,
                     ]}
                   />
                 ))}
@@ -274,6 +276,14 @@ const styles = StyleSheet.create({
   },
   dotMvp: {
     borderColor: Theme.colors.goldHigh,
+    borderWidth: 2,
+  },
+  dotRingAsc: {
+    borderColor: Theme.colors.gold,
+    borderWidth: 2,
+  },
+  dotRingOnline: {
+    borderColor: '#6B9FD4',
     borderWidth: 2,
   },
 });

@@ -6,11 +6,14 @@ import type {
   NextRunBonusId,
 } from '../campaign/types';
 import { DEFAULT_CAMPAIGN_PROGRESS } from '../campaign/progress';
+import { computeMatchSkillScore } from './matchSkillScore';
 
 const KEYS = {
   playerName: '@coup/player_name',
   muted: '@coup/muted',
+  /** Legado — migrado para matchHistoryV2 na primeira leitura */
   matchHistory: '@coup/match_history_v1',
+  matchHistoryV2: '@coup/match_history_v2',
   resumeSnapshot: '@coup/resume_v1',
   difficulty: '@coup/difficulty_v1',
   audioSfxVol: '@coup/audio_sfx_vol',
@@ -21,12 +24,18 @@ const KEYS = {
   pendingNextRunBonus: '@coup/pending_next_run_bonus_v1',
 };
 
+/** Partida rápida offline (sem Ascensão). */
+export type MatchHistoryMode = 'quick_offline' | 'ascension' | 'multiplayer';
+
 /**
- * Registro individual de uma partida (para histórico + win rate).
+ * Registro individual de uma partida (histórico, win rate, base para rank futuro).
  */
 export interface MatchHistoryEntry {
   id: string;
   playedAt: number; // timestamp ms
+  mode: MatchHistoryMode;
+  /** Performance da partida (pesos fixos — usar no rank global futuro). */
+  skillScore: number;
   durationMs: number;
   rounds: number;
   result: 'win' | 'loss';
@@ -35,17 +44,97 @@ export interface MatchHistoryEntry {
   actionsTaken: number;
   challengesMade: number;
   challengesWon: number;
+  challengesLost: number;
   bluffsCaught: number;
   bluffsSurvived: number;
   blocksMade: number;
   blocksSuccess: number;
+  blocksFailed: number;
   coinsGained: number;
   coinsLost: number;
   cardsLost: number;
-  mvp: boolean; // true se o humano foi o maior pontuador do "score" composto
+  mvp: boolean;
+  /** Ascensão: posto em que a partida ocorreu */
+  ascensionRankId?: string | null;
+  ascensionRankTitle?: string | null;
+  /** Multijogador: sala curta para leitura humana */
+  roomIdShort?: string | null;
+  /** Multijogador: nome da sala se existir */
+  roomDisplayName?: string | null;
+  /**
+   * Reservado para sincronizar com ranking global (Elo, posição).
+   * Quando o servidor existir, preencher após cada partida ranqueada.
+   */
+  globalRankPlaceholder?: {
+    schemaVersion: 1;
+    note: 'local_only_until_server';
+  } | null;
 }
 
-const MAX_HISTORY = 50;
+const MAX_HISTORY = 100;
+
+export function normalizeMatchHistoryEntry(raw: unknown): MatchHistoryEntry {
+  const e = raw as Record<string, unknown>;
+  const modeRaw = e.mode;
+  const mode: MatchHistoryMode =
+    modeRaw === 'ascension' ||
+    modeRaw === 'multiplayer' ||
+    modeRaw === 'quick_offline'
+      ? modeRaw
+      : 'quick_offline';
+
+  const skillScore =
+    typeof e.skillScore === 'number' && Number.isFinite(e.skillScore)
+      ? e.skillScore
+      : computeMatchSkillScore({
+          actionsTaken: Number(e.actionsTaken) || 0,
+          challengesWon: Number(e.challengesWon) || 0,
+          bluffsCaught: Number(e.bluffsCaught) || 0,
+          blocksSuccess: Number(e.blocksSuccess) || 0,
+          bluffsSurvived: Number(e.bluffsSurvived) || 0,
+          coinsGained: Number(e.coinsGained) || 0,
+          coinsLost: Number(e.coinsLost) || 0,
+          cardsLost: Number(e.cardsLost) || 0,
+        });
+
+  return {
+    id: String(e.id ?? `m-${Date.now()}`),
+    playedAt: Number(e.playedAt) || Date.now(),
+    mode,
+    skillScore,
+    durationMs: Number(e.durationMs) || 0,
+    rounds: Number(e.rounds) || 1,
+    result: e.result === 'loss' ? 'loss' : 'win',
+    opponents: Number(e.opponents) || 0,
+    playerName: String(e.playerName ?? '—'),
+    actionsTaken: Number(e.actionsTaken) || 0,
+    challengesMade: Number(e.challengesMade) || 0,
+    challengesWon: Number(e.challengesWon) || 0,
+    challengesLost: Number(e.challengesLost) || 0,
+    bluffsCaught: Number(e.bluffsCaught) || 0,
+    bluffsSurvived: Number(e.bluffsSurvived) || 0,
+    blocksMade: Number(e.blocksMade) || 0,
+    blocksSuccess: Number(e.blocksSuccess) || 0,
+    blocksFailed: Number(e.blocksFailed) || 0,
+    coinsGained: Number(e.coinsGained) || 0,
+    coinsLost: Number(e.coinsLost) || 0,
+    cardsLost: Number(e.cardsLost) || 0,
+    mvp: Boolean(e.mvp),
+    ascensionRankId:
+      e.ascensionRankId != null ? String(e.ascensionRankId) : undefined,
+    ascensionRankTitle:
+      e.ascensionRankTitle != null ? String(e.ascensionRankTitle) : undefined,
+    roomIdShort:
+      e.roomIdShort != null ? String(e.roomIdShort) : undefined,
+    roomDisplayName:
+      e.roomDisplayName != null ? String(e.roomDisplayName) : undefined,
+    globalRankPlaceholder:
+      e.globalRankPlaceholder &&
+      typeof e.globalRankPlaceholder === 'object'
+        ? (e.globalRankPlaceholder as MatchHistoryEntry['globalRankPlaceholder'])
+        : undefined,
+  };
+}
 
 export const storage = {
   async getPlayerName(): Promise<string | null> {
@@ -134,10 +223,24 @@ export const storage = {
 
 export async function getMatchHistory(): Promise<MatchHistoryEntry[]> {
   try {
-    const raw = await AsyncStorage.getItem(KEYS.matchHistory);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const rawV2 = await AsyncStorage.getItem(KEYS.matchHistoryV2);
+    if (rawV2) {
+      const parsed = JSON.parse(rawV2);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map(normalizeMatchHistoryEntry);
+    }
+    const rawV1 = await AsyncStorage.getItem(KEYS.matchHistory);
+    if (rawV1) {
+      const parsed = JSON.parse(rawV1);
+      if (!Array.isArray(parsed)) return [];
+      const migrated = parsed.map(normalizeMatchHistoryEntry);
+      await AsyncStorage.setItem(
+        KEYS.matchHistoryV2,
+        JSON.stringify(migrated)
+      );
+      return migrated;
+    }
+    return [];
   } catch {
     return [];
   }
@@ -148,8 +251,9 @@ export async function appendMatchHistory(
 ): Promise<void> {
   try {
     const list = await getMatchHistory();
-    const next = [entry, ...list].slice(0, MAX_HISTORY);
-    await AsyncStorage.setItem(KEYS.matchHistory, JSON.stringify(next));
+    const normalized = normalizeMatchHistoryEntry(entry);
+    const next = [normalized, ...list].slice(0, MAX_HISTORY);
+    await AsyncStorage.setItem(KEYS.matchHistoryV2, JSON.stringify(next));
   } catch {
     /* ignora */
   }
@@ -157,7 +261,7 @@ export async function appendMatchHistory(
 
 export async function clearMatchHistory(): Promise<void> {
   try {
-    await AsyncStorage.removeItem(KEYS.matchHistory);
+    await AsyncStorage.multiRemove([KEYS.matchHistory, KEYS.matchHistoryV2]);
   } catch {
     /* ignora */
   }
@@ -174,10 +278,21 @@ export interface HistoryAggregate {
   totalChallengesWon: number;
   avgRounds: number;
   avgDurationMs: number;
+  /** Média da pontuação de performance (partidas com registro). */
+  avgSkillScore: number;
+  /** Melhor performance registrada. */
+  bestSkillScore: number;
 }
 
-export function aggregateHistory(list: MatchHistoryEntry[]): HistoryAggregate {
-  if (list.length === 0) {
+export function aggregateHistory(
+  list: MatchHistoryEntry[],
+  modeFilter: MatchHistoryMode | 'all' = 'all'
+): HistoryAggregate {
+  const filtered =
+    modeFilter === 'all'
+      ? list
+      : list.filter((m) => m.mode === modeFilter);
+  if (filtered.length === 0) {
     return {
       total: 0,
       wins: 0,
@@ -189,15 +304,17 @@ export function aggregateHistory(list: MatchHistoryEntry[]): HistoryAggregate {
       totalChallengesWon: 0,
       avgRounds: 0,
       avgDurationMs: 0,
+      avgSkillScore: 0,
+      bestSkillScore: 0,
     };
   }
-  const wins = list.filter((m) => m.result === 'win').length;
-  const losses = list.length - wins;
-  // list está em ordem decrescente (mais recente primeiro)
+  const wins = filtered.filter((m) => m.result === 'win').length;
+  const losses = filtered.length - wins;
+  // Ordem decrescente (mais recente primeiro)
   let currentStreak = 0;
-  if (list[0]) {
-    const sign = list[0].result === 'win' ? 1 : -1;
-    for (const m of list) {
+  if (filtered[0]) {
+    const sign = filtered[0].result === 'win' ? 1 : -1;
+    for (const m of filtered) {
       if (sign > 0 && m.result === 'win') currentStreak++;
       else if (sign < 0 && m.result === 'loss') currentStreak--;
       else break;
@@ -205,9 +322,8 @@ export function aggregateHistory(list: MatchHistoryEntry[]): HistoryAggregate {
   }
   let bestWinStreak = 0;
   let cur = 0;
-  // melhor sequência de vitórias: varre na ordem cronológica ascendente
-  for (let i = list.length - 1; i >= 0; i--) {
-    if (list[i].result === 'win') {
+  for (let i = filtered.length - 1; i >= 0; i--) {
+    if (filtered[i].result === 'win') {
       cur++;
       if (cur > bestWinStreak) bestWinStreak = cur;
     } else {
@@ -215,20 +331,30 @@ export function aggregateHistory(list: MatchHistoryEntry[]): HistoryAggregate {
     }
   }
 
-  const totalRounds = list.reduce((s, m) => s + (m.rounds || 0), 0);
-  const totalDuration = list.reduce((s, m) => s + (m.durationMs || 0), 0);
+  const totalRounds = filtered.reduce((s, m) => s + (m.rounds || 0), 0);
+  const totalDuration = filtered.reduce((s, m) => s + (m.durationMs || 0), 0);
+  const totalSkill = filtered.reduce(
+    (s, m) => s + (Number.isFinite(m.skillScore) ? m.skillScore : 0),
+    0
+  );
+  const bestSkillScore = filtered.reduce(
+    (s, m) => Math.max(s, Number.isFinite(m.skillScore) ? m.skillScore : 0),
+    0
+  );
 
   return {
-    total: list.length,
+    total: filtered.length,
     wins,
     losses,
-    winRate: list.length ? wins / list.length : 0,
+    winRate: filtered.length ? wins / filtered.length : 0,
     currentStreak,
     bestWinStreak,
-    totalBluffsCaught: list.reduce((s, m) => s + m.bluffsCaught, 0),
-    totalChallengesWon: list.reduce((s, m) => s + m.challengesWon, 0),
-    avgRounds: list.length ? totalRounds / list.length : 0,
-    avgDurationMs: list.length ? totalDuration / list.length : 0,
+    totalBluffsCaught: filtered.reduce((s, m) => s + m.bluffsCaught, 0),
+    totalChallengesWon: filtered.reduce((s, m) => s + m.challengesWon, 0),
+    avgRounds: filtered.length ? totalRounds / filtered.length : 0,
+    avgDurationMs: filtered.length ? totalDuration / filtered.length : 0,
+    avgSkillScore: filtered.length ? totalSkill / filtered.length : 0,
+    bestSkillScore,
   };
 }
 

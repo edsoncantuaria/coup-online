@@ -50,7 +50,9 @@ import {
   getCampaignProgress,
   setCampaignProgress,
   setPendingNextRunBonus,
+  type MatchHistoryMode,
 } from '../../utils/storage';
+import { computeMatchSkillScore } from '../../utils/matchSkillScore';
 import { RANKS } from '../../campaign/ranks';
 import { clampRankIndex } from '../../campaign/progress';
 import { resolveCampaignRecap } from '../../campaign/recap';
@@ -309,22 +311,30 @@ export default function GameScreen() {
         playSfx('DEFEAT');
       }
 
-      // Grava histórico da partida
+      // Grava histórico da partida (modo + performance para rank futuro)
       if (matchStats && me) {
         const s = matchStats.perPlayer?.[myId] || {};
-        // Cálculo simples do MVP: maior score entre jogadores
+        const gs = useGameState.getState();
+        const cr = gs.campaignRun;
+        const offline = gs.isOffline;
+        const roomIdStr = gs.roomId;
+        const meta = gs.roomMeta;
+
+        let mode: MatchHistoryMode = 'multiplayer';
+        if (offline) {
+          mode = cr ? 'ascension' : 'quick_offline';
+        }
+
+        const ascRank = cr
+          ? RANKS[clampRankIndex(cr.rankIndex)]
+          : null;
+
         const scores = players.map((p: any) => {
           const ss = matchStats.perPlayer?.[p.id] || {};
-          const score =
-            (ss.actionsTaken || 0) * 1 +
-            (ss.challengesWon || 0) * 4 +
-            (ss.bluffsCaught || 0) * 4 +
-            (ss.blocksSuccess || 0) * 3 +
-            (ss.bluffsSurvived || 0) * 2 +
-            (ss.coinsGained || 0) * 0.3 -
-            (ss.coinsLost || 0) * 0.15 -
-            (ss.cardsLost || 0) * 5;
-          return { id: p.id, score };
+          return {
+            id: p.id,
+            score: computeMatchSkillScore(ss),
+          };
         });
         scores.sort((a, b) => b.score - a.score);
         const mvp = scores[0]?.id === myId;
@@ -332,9 +342,12 @@ export default function GameScreen() {
           matchStats.endedAt && matchStats.startedAt
             ? matchStats.endedAt - matchStats.startedAt
             : 0;
+        const skillScore = computeMatchSkillScore(s);
         appendMatchHistory({
           id: `m-${Date.now()}`,
           playedAt: Date.now(),
+          mode,
+          skillScore,
           durationMs: duration,
           rounds: matchStats.round || 1,
           result: iWin ? 'win' : 'loss',
@@ -343,14 +356,20 @@ export default function GameScreen() {
           actionsTaken: s.actionsTaken || 0,
           challengesMade: s.challengesMade || 0,
           challengesWon: s.challengesWon || 0,
+          challengesLost: s.challengesLost || 0,
           bluffsCaught: s.bluffsCaught || 0,
           bluffsSurvived: s.bluffsSurvived || 0,
           blocksMade: s.blocksMade || 0,
           blocksSuccess: s.blocksSuccess || 0,
+          blocksFailed: s.blocksFailed || 0,
           coinsGained: s.coinsGained || 0,
           coinsLost: s.coinsLost || 0,
           cardsLost: s.cardsLost || 0,
           mvp,
+          ascensionRankId: cr ? cr.rankId : null,
+          ascensionRankTitle: ascRank?.title ?? null,
+          roomIdShort: roomIdStr ? roomIdStr.slice(0, 12) : null,
+          roomDisplayName: meta?.displayName ?? null,
         }).catch(() => {
           /* ignora */
         });
