@@ -165,6 +165,59 @@ export class CoupEngine {
     }
   }
 
+  /**
+   * Jogador saiu no meio da partida (online): perde todas as influências e
+   * continua na lista, para não bagunçar os índices de turno. Uma jogada em
+   * aberto é cancelada e o turno segue para o próximo vivo.
+   */
+  public forfeitPlayer(playerId: string): void {
+    if (!this.gameStarted) {
+      this.disconnectPlayer(playerId);
+      return;
+    }
+    const player = this.state.players.find((p) => p.id === playerId);
+    if (!player) return;
+    player.isConnected = false;
+    if (this.state.phase === 'game_over') return;
+
+    const wasAlive = player.cards.some((c) => !c.isFlipped);
+    player.cards.forEach((c) => {
+      c.isFlipped = true;
+    });
+    if (wasAlive) this.addLog(`🚪 ${player.name} abandonou a partida.`);
+
+    // Cartas compradas numa troca em andamento voltam para a Corte.
+    if (this.state.exchangingCards?.length) {
+      this.state.deck.push(...this.state.exchangingCards);
+      this.state.deck = this.shuffleDeck(this.state.deck);
+    }
+
+    const open = this.state.phase !== 'action';
+    const wasCurrent = this.state.players[this.state.turnIndex]?.id === playerId;
+    this.state.currentAction = null;
+    this.state.pendingBlock = null;
+    this.state.pendingChallenge = undefined;
+    this.state.responses = {};
+    this.state.losingInfluenceId = undefined;
+    this.state.losingContext = undefined;
+    this.state.exchangingCards = undefined;
+    this.state.pendingResolution = undefined;
+    this.state.waitingForResponseIndex = null;
+    this.state.responderCycleStartIndex = null;
+
+    if (open || wasCurrent) {
+      if (open) this.addLog('⚠️ A jogada em andamento foi cancelada.');
+      this.state.phase = 'action';
+      this.nextTurn();
+      return;
+    }
+    const alive = this.state.players.filter((p) => p.cards.some((c) => !c.isFlipped));
+    if (alive.length <= 1) {
+      // nextTurn encerra a partida ao detectar um único sobrevivente.
+      this.nextTurn();
+    }
+  }
+
   private adjustTurnIndexAfterRemove(removedIdx: number): void {
     if (this.state.players.length === 0) return;
     if (removedIdx < this.state.turnIndex) {
@@ -952,7 +1005,6 @@ export class CoupEngine {
 
   public handleFlip(playerId: string, role: Role) {
     if (this.state.phase !== 'losing_influence' || this.state.losingInfluenceId !== playerId) {
-      console.log(`[Engine] handleFlip ignorado: phase=${this.state.phase}, expected=${this.state.losingInfluenceId}, got=${playerId}`);
       return;
     }
     
@@ -970,7 +1022,6 @@ export class CoupEngine {
         stamp: Date.now(),
       };
       this.recordCardLost(playerId);
-      console.log(`[Engine] Card flipped: ${playerId} lost ${role}`);
       
       const resolution = this.state.pendingResolution?.type || 'next_turn';
       this.state.pendingResolution = undefined;
@@ -992,7 +1043,6 @@ export class CoupEngine {
         this.nextTurn();
       }
     } else {
-      console.log(`[Engine] Carta não encontrada ou já virada: ${playerId} -> ${role}`);
     }
   }
 

@@ -73,7 +73,23 @@ export class RoomManager {
     }));
   }
 
-  public handleConnection(socket: Socket) {
+  public handleConnection(rawSocket: Socket) {
+    // Um payload malformado nunca pode derrubar o processo: cada handler
+    // roda protegido e o erro só vai para o log.
+    const socket = {
+      id: rawSocket.id,
+      emit: rawSocket.emit.bind(rawSocket),
+      join: rawSocket.join.bind(rawSocket),
+      leave: rawSocket.leave.bind(rawSocket),
+      on: (event: string, handler: (...args: any[]) => void) =>
+        rawSocket.on(event, (...args: any[]) => {
+          try {
+            handler(...args);
+          } catch (err) {
+            console.error(`[room] erro em "${event}" de ${rawSocket.id}:`, err);
+          }
+        }),
+    } as unknown as Socket;
     socket.on('create_room', (data: { displayName?: string; roomName?: string; playerName?: string; password?: string }) => {
       const dn = (data?.displayName ?? data?.roomName ?? '').trim();
       const pn = (data?.playerName ?? '').trim();
@@ -164,6 +180,7 @@ export class RoomManager {
       if (entry.engine.getState().phase !== 'game_over') return;
       const fresh = new CoupEngine(rid);
       for (const p of entry.engine.getState().players) {
+        if (!p.isBot && !p.isConnected) continue;
         fresh.addPlayer(p.id, p.name, p.isBot, p.personality);
       }
       entry.engine = fresh;
@@ -214,8 +231,11 @@ export class RoomManager {
     socket.leave(roomId);
     const entry = this.rooms.get(roomId);
     if (!entry) return;
-    entry.engine.disconnectPlayer(socket.id);
-    const humans = entry.engine.getState().players.filter((p) => !p.isBot);
+    // No lobby sai da lista; na partida, abandona (perde as influências).
+    entry.engine.forfeitPlayer(socket.id);
+    const humans = entry.engine
+      .getState()
+      .players.filter((p) => !p.isBot && p.isConnected);
     if (humans.length === 0) {
       this.clearTimer(entry);
       this.rooms.delete(roomId);
@@ -258,7 +278,11 @@ export class RoomManager {
         if (this.rooms.get(roomId) !== entry) return;
         // Garante que ninguém jogou nesse meio tempo.
         if (pendingActor(entry.engine.getState()) !== actorId) return;
-        this.playFor(entry.engine, actorId);
+        try {
+          this.playFor(entry.engine, actorId);
+        } catch (err) {
+          console.error(`[room ${roomId}] erro ao jogar por ${actorId}:`, err);
+        }
         this.afterMutation(roomId);
       },
       actor.isBot ? BOT_DELAY_MS : HUMAN_TIMEOUT_MS,
@@ -330,7 +354,7 @@ export class RoomManager {
     const entry = this.rooms.get(roomId);
     if (!entry) return;
     for (const p of entry.engine.getState().players) {
-      if (p.isBot) continue;
+      if (p.isBot || !p.isConnected) continue;
       this.io.to(p.id).emit('room_update', this.viewFor(entry, p.id));
     }
   }

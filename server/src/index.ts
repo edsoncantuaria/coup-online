@@ -26,11 +26,9 @@ app.get('/api/rooms', (_req, res) => {
 });
 
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
   roomManager.handleConnection(socket);
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
     roomManager.handleDisconnect(socket);
   });
 });
