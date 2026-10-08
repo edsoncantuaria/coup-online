@@ -6,7 +6,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Server, Socket } from 'socket.io';
 import cors from 'cors';
-import { AccountService, IdentityRegistry, publicUser, type UserRecord } from './accounts/AccountService.js';
+import { AccountService, IdentityRegistry, selfUser, type UserRecord } from './accounts/AccountService.js';
+import { mailerFromEnv, resetPasswordMail, verifyEmailMail, type Mailer } from './mail/Mailer.js';
+import { resetPasswordPage, verifyResultPage } from './mail/pages.js';
 import { AppError, cleanText, errorPayload, str } from './errors.js';
 import { Matchmaker, type MatchmakerOptions } from './lobby/Matchmaker.js';
 import { RoomManager, MAX_PLAYERS } from './socket/RoomManager.js';
@@ -23,6 +25,10 @@ export type ServerOptions = {
   reports?: Partial<ReportLimits>;
   /** Contas novas por IP por hora. */
   registerPerHour?: number;
+  /** Quem manda os emails; padrão: SMTP se `SMTP_HOST`, senão log. */
+  mailer?: Mailer;
+  /** Endereço público do servidor, usado nos links dos emails. */
+  publicUrl?: string;
 };
 
 const num = (v: string | undefined, d: number) => {
@@ -36,6 +42,11 @@ const HTTP_STATUS: Record<string, number> = {
   INVALID: 400,
   INVALID_USERNAME: 400,
   INVALID_PASSWORD: 400,
+  INVALID_EMAIL: 400,
+  INVALID_TOKEN: 400,
+  NO_EMAIL: 400,
+  ALREADY_VERIFIED: 409,
+  EMAIL_TAKEN: 409,
   BAD_CREDENTIALS: 401,
   UNAUTHORIZED: 401,
   USERNAME_TAKEN: 409,
@@ -85,6 +96,11 @@ export async function startServer(opts: ServerOptions = {}) {
   const friendLimiter = new RateLimiter(30, 10 * 60 * 1000);
   const inviteLimiter = new RateLimiter(30, 10 * 60 * 1000);
   const authLimiter = new RateLimiter(30, 60 * 1000);
+  const mailIpLimiter = new RateLimiter(10, 60 * 60 * 1000);
+  const mailUserLimiter = new RateLimiter(3, 60 * 60 * 1000);
+  const mailer = opts.mailer ?? mailerFromEnv(env);
+  /** Base dos links nos emails; sem PUBLIC_URL, o próprio servidor local. */
+  let linkBase = (opts.publicUrl ?? env.PUBLIC_URL ?? '').replace(/\/+$/, '');
   /** Token com que cada socket entrou (para o logout revogar). */
   const socketTokens = new Map<string, string>();
 
@@ -136,12 +152,41 @@ export async function startServer(opts: ServerOptions = {}) {
     res.status(HTTP_STATUS[p.code] ?? (p.code === 'INTERNAL' ? 500 : 400)).json(p);
   };
 
+  /** Manda um email sem travar a resposta; falha de SMTP só vai para o log. */
+  const deliver = (mail: Parameters<Mailer['send']>[0]) => {
+    mailer.send(mail).catch((err) => console.error(`[mail] falhou para ${mail.to}:`, err));
+  };
+  const sendVerify = (user: UserRecord, token: string) => {
+    if (user.email) deliver(verifyEmailMail(user.email, user.username, `${linkBase}/verify-email?token=${token}`));
+  };
+
   const doRegister = async (ip: string, data: unknown) => {
     if (!registerLimiter.hit(ip)) throw new AppError('RATE_LIMITED', 'Muitas contas criadas daqui. Tente mais tarde.');
-    return accounts.register(str(data, 'username'), str(data, 'password'));
+    const r = await accounts.register(str(data, 'username'), str(data, 'email'), str(data, 'password'));
+    sendVerify(r.user, r.verifyToken);
+    return r;
+  };
+  const doResend = (ip: string, user: UserRecord) => {
+    if (!mailIpLimiter.hit(ip) || !mailUserLimiter.hit(user.id)) {
+      throw new AppError('RATE_LIMITED', 'Muitos emails pedidos. Tente mais tarde.');
+    }
+    sendVerify(user, accounts.newVerifyToken(user));
+  };
+  /** Sempre responde igual, exista ou não a conta (não revela quem tem cadastro). */
+  const doForgot = (ip: string, data: unknown) => {
+    const email = str(data, 'email').trim().toLowerCase();
+    if (!email.includes('@') || email.length > 254) throw new AppError('INVALID_EMAIL', 'Digite um email válido.');
+    if (!mailIpLimiter.hit(ip) || !mailUserLimiter.hit(`forgot:${email}`)) {
+      throw new AppError('RATE_LIMITED', 'Muitos emails pedidos. Tente mais tarde.');
+    }
+    const r = accounts.requestPasswordReset(email);
+    if (r?.user.email) {
+      deliver(resetPasswordMail(r.user.email, r.user.username, `${linkBase}/reset-password?token=${r.token}`));
+    }
   };
   const doLogin = async (ip: string, data: unknown) => {
-    const username = str(data, 'username');
+    // `login` aceita usuário ou email; `username` fica por compatibilidade.
+    const username = str(data, 'login') || str(data, 'username') || str(data, 'email');
     const key = `${ip}|${username.trim().toLowerCase()}`;
     if (!loginIpLimiter.hit(ip)) throw new AppError('RATE_LIMITED', 'Muitas tentativas. Tente mais tarde.');
     try {
@@ -167,7 +212,7 @@ export async function startServer(opts: ServerOptions = {}) {
   app.post('/api/auth/register', async (req, res) => {
     try {
       const { user, token } = await doRegister(clientIp(req), req.body);
-      res.status(201).json({ ok: true, token, user: publicUser(user) });
+      res.status(201).json({ ok: true, token, user: selfUser(user) });
     } catch (err) {
       send(res, err);
     }
@@ -176,10 +221,65 @@ export async function startServer(opts: ServerOptions = {}) {
   app.post('/api/auth/login', async (req, res) => {
     try {
       const { user, token } = await doLogin(clientIp(req), req.body);
-      res.json({ ok: true, token, user: publicUser(user) });
+      res.json({ ok: true, token, user: selfUser(user) });
     } catch (err) {
       send(res, err);
     }
+  });
+
+  app.post('/api/auth/verify-email', (req, res) => {
+    try {
+      const user = accounts.verifyEmail(str(req.body, 'token'));
+      res.json({ ok: true, user: selfUser(user) });
+    } catch (err) {
+      send(res, err);
+    }
+  });
+
+  app.post('/api/auth/resend-verification', (req, res) => {
+    try {
+      const user = accounts.authenticate(bearer(req));
+      if (!user) throw new AppError('UNAUTHORIZED', 'Sessão inválida ou expirada.');
+      doResend(clientIp(req), user);
+      res.json({ ok: true });
+    } catch (err) {
+      send(res, err);
+    }
+  });
+
+  app.post('/api/auth/forgot-password', (req, res) => {
+    try {
+      doForgot(clientIp(req), req.body);
+      res.json({ ok: true });
+    } catch (err) {
+      send(res, err);
+    }
+  });
+
+  app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+      await accounts.resetPassword(str(req.body, 'token'), str(req.body, 'password'));
+      res.json({ ok: true });
+    } catch (err) {
+      send(res, err);
+    }
+  });
+
+  // Páginas que os links dos emails abrem.
+  app.get('/verify-email', (req, res) => {
+    const token = typeof req.query.token === 'string' ? req.query.token : '';
+    let ok = false;
+    try {
+      accounts.verifyEmail(token);
+      ok = true;
+    } catch {
+      ok = false;
+    }
+    res.status(ok ? 200 : 400).type('html').send(verifyResultPage(ok));
+  });
+
+  app.get('/reset-password', (_req, res) => {
+    res.type('html').send(resetPasswordPage());
   });
 
   app.post('/api/auth/logout', (req, res) => {
@@ -190,7 +290,7 @@ export async function startServer(opts: ServerOptions = {}) {
   app.get('/api/auth/me', (req, res) => {
     const user = accounts.authenticate(bearer(req));
     if (!user) return send(res, new AppError('UNAUTHORIZED', 'Sessão inválida ou expirada.'));
-    res.json({ ok: true, user: publicUser(user) });
+    res.json({ ok: true, user: selfUser(user) });
   });
 
   // JSON malformado vira erro JSON, não página HTML.
@@ -218,7 +318,7 @@ export async function startServer(opts: ServerOptions = {}) {
     }
     identities.bind(socket.id, user.id);
     socketTokens.set(socket.id, token);
-    socket.emit('account_state', { user: publicUser(user) });
+    socket.emit('account_state', { user: selfUser(user) });
     friends.push(user.id);
     friends.presenceChanged(user.id);
   };
@@ -270,13 +370,13 @@ export async function startServer(opts: ServerOptions = {}) {
     handle('account_register', async (data) => {
       const { user, token } = await doRegister(socketIp(socket), data);
       bind(socket, user, token);
-      return { token, user: publicUser(user) };
+      return { token, user: selfUser(user) };
     });
 
     handle('account_login', async (data) => {
       const { user, token } = await doLogin(socketIp(socket), data);
       bind(socket, user, token);
-      return { token, user: publicUser(user) };
+      return { token, user: selfUser(user) };
     });
 
     handle('account_auth', (data) => {
@@ -285,7 +385,7 @@ export async function startServer(opts: ServerOptions = {}) {
       const u = accounts.authenticate(token);
       if (!u) throw new AppError('UNAUTHORIZED', 'Sessão inválida ou expirada.');
       bind(socket, u, token);
-      return { user: publicUser(u) };
+      return { user: selfUser(u) };
     });
 
     handle('account_logout', () => {
@@ -295,10 +395,18 @@ export async function startServer(opts: ServerOptions = {}) {
       socket.emit('account_state', { user: null });
     });
 
+    handle('account_resend_verification', () => {
+      doResend(socketIp(socket), me(socket));
+    });
+
+    handle('account_forgot_password', (data) => {
+      doForgot(socketIp(socket), data);
+    });
+
     handle('account_me', () => {
       const uid = identities.userOf(socket.id);
       const u = uid ? accounts.get(uid) : undefined;
-      return { user: u ? publicUser(u) : null };
+      return { user: u ? selfUser(u) : null };
     });
 
     // ----- salas abertas e fila -----
@@ -393,6 +501,8 @@ export async function startServer(opts: ServerOptions = {}) {
 
   await new Promise<void>((resolve) => httpServer.listen(opts.port ?? num(env.PORT, 3000), resolve));
   const port = (httpServer.address() as AddressInfo).port;
+  if (!linkBase) linkBase = `http://localhost:${port}`;
+  if (mailer.kind === 'log') console.log('[mail] sem SMTP_HOST: os emails da conta vão só para este log.');
 
   const flush = () => {
     accounts.flush();

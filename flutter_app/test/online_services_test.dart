@@ -30,6 +30,25 @@ void main() {
     expect(AccountService.validateUsername('a' * 21), isNotNull);
     expect(AccountService.validatePassword('12345'), isNotNull);
     expect(AccountService.validatePassword('123456'), isNull);
+    expect(AccountService.validateEmail('ana@exemplo.com'), isNull);
+    expect(AccountService.validateEmail(' Ana@Exemplo.com.br '), isNull);
+    expect(AccountService.validateEmail('ana'), isNotNull);
+    expect(AccountService.validateEmail('ana@exemplo'), isNotNull);
+    expect(AccountService.validateEmail('a b@exemplo.com'), isNotNull);
+  });
+
+  test('conta lê email e confirmação só quando vêm', () {
+    final full = AccountUser.fromJson({
+      'id': 'u_1',
+      'username': 'ana',
+      'email': 'ana@exemplo.com',
+      'emailVerified': true,
+    })!;
+    expect(full.email, 'ana@exemplo.com');
+    expect(full.emailVerified, isTrue);
+    final old = AccountUser.fromJson({'id': 'u_2', 'username': 'beto'})!;
+    expect(old.email, isNull);
+    expect(old.emailVerified, isFalse);
   });
 
   test('salas abertas e status da fila', () {

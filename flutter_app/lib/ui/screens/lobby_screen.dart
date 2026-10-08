@@ -9,6 +9,7 @@ import '../../online/lobby_service.dart';
 import '../../online/online_hub.dart';
 import '../../online/social_service.dart';
 import '../theme.dart';
+import '../widgets/entry_sheet.dart';
 import '../widgets/tv.dart';
 import 'game_screen.dart';
 import 'online_screen.dart';
@@ -395,9 +396,17 @@ class _LobbyScreenState extends State<LobbyScreen> {
         Row(
           children: [
             Expanded(child: Text(user.username, style: TvType.title(34))),
-            TextButton(onPressed: account.logout, child: const Text('SAIR')),
+            TextButton(
+              onPressed: () => showAccountSheet(context, account),
+              child: const Text('CONTA'),
+            ),
           ],
         ),
+        if (user.email != null && !user.emailVerified)
+          Text(
+            'EMAIL NÃO CONFIRMADO',
+            style: TvType.credit(10, color: Tv.carmineText),
+          ),
       ],
     );
   }
@@ -592,130 +601,4 @@ class _SearchTickState extends State<_SearchTick>
       ],
     ),
   );
-}
-
-// ------------------------------------------------------------ conta
-
-/// Entrar ou criar conta, numa folha só.
-Future<void> showAccountSheet(BuildContext context, AccountService account) =>
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _AccountSheet(account: account),
-    );
-
-class _AccountSheet extends StatefulWidget {
-  const _AccountSheet({required this.account});
-  final AccountService account;
-
-  @override
-  State<_AccountSheet> createState() => _AccountSheetState();
-}
-
-class _AccountSheetState extends State<_AccountSheet> {
-  final _user = TextEditingController();
-  final _pass = TextEditingController();
-  bool _create = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _user.dispose();
-    _pass.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final a = widget.account;
-    final r = _create
-        ? await a.register(_user.text, _pass.text)
-        : await a.login(_user.text, _pass.text);
-    if (!mounted) return;
-    if (r.ok) {
-      Navigator.of(context).pop();
-    } else {
-      setState(() => _error = r.message ?? 'Não deu certo.');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final busy = widget.account.busy;
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _create ? 'Criar conta.' : 'Entrar.',
-                style: TvType.title(36),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _create
-                    ? 'Seu nome de usuário é o nome que aparece na mesa.'
-                    : 'Com a conta, seus amigos te encontram.',
-                style: const TextStyle(
-                  fontFamily: TvType.sans,
-                  fontSize: 14,
-                  color: Tv.creditDim,
-                ),
-              ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: _user,
-                autofocus: true,
-                textInputAction: TextInputAction.next,
-                autofillHints: const [AutofillHints.username],
-                decoration: const InputDecoration(labelText: 'Usuário'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _pass,
-                obscureText: true,
-                autofillHints: [
-                  _create ? AutofillHints.newPassword : AutofillHints.password,
-                ],
-                decoration: InputDecoration(
-                  labelText: 'Senha',
-                  helperText: _create ? 'Pelo menos 6 caracteres' : null,
-                ),
-                onSubmitted: (_) => _submit(),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  _error!,
-                  style: const TextStyle(
-                    fontFamily: TvType.sans,
-                    color: Tv.carmineText,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 20),
-              CueButton(
-                label: _create ? 'Criar conta' : 'Entrar',
-                onPressed: busy ? null : _submit,
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => setState(() {
-                  _create = !_create;
-                  _error = null;
-                }),
-                child: Text(
-                  _create ? 'JÁ TENHO CONTA' : 'AINDA NÃO TENHO CONTA',
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }

@@ -75,8 +75,18 @@ A camada de dados fica em `lib/online/` (as telas ainda vão usá-la):
 Para jogar a partida da fila ou entrar por convite, crie o controlador com a
 mesma conexão: `OnlineGameController.shared(connection)`.
 
-- **Contas**: usuário (3 a 20 letras, números, `.`, `-`, `_`) e senha (6+).
-  Logado, o nome na mesa é sempre o da conta.
+- **Entrar**: no alto da abertura, o botão Entrar abre três caminhos:
+  jogar como convidado (só um nome), entrar com login ou criar conta
+  (`lib/ui/widgets/entry_sheet.dart`). Com uma sessão salva, a abertura
+  retoma a conta sozinha.
+- **Contas**: usuário (3 a 20 letras, números, `.`, `-`, `_`), email e senha
+  (6+). Entra com o usuário ou com o email. Logado, o nome na mesa é sempre o
+  da conta.
+- **Email**: ao criar a conta o servidor manda um link de confirmação (vale
+  48 h; dá para pedir de novo na tela da conta). "Esqueci a senha" manda um
+  link que abre uma página do próprio servidor para criar a senha nova (vale
+  1 h, uso único, derruba as sessões abertas). Contas antigas, sem email,
+  continuam entrando pelo usuário.
 - **Buscar partida**: a fila junta quem está sem sala numa partida pública.
   Com 6 na fila começa na hora; com 4 ou 5, espera uns segundos por mais
   gente; se o primeiro da fila esperar 20 s, bots completam a mesa (até 4).
@@ -105,6 +115,25 @@ Ajustes por variável de ambiente: `QUEUE_BOT_FILL_MS` (20000),
 `QUEUE_GATHER_MS` (8000), `QUEUE_MIN_PLAYERS` (4), `QUEUE_BOT_FILL_TARGET` (4),
 `REPORT_LIMIT` (5), `REPORT_WINDOW_MS` (600000), `REGISTER_LIMIT` (20 contas
 por IP por hora) e `TRUST_PROXY=1` atrás de proxy reverso.
+
+### Email (SMTP)
+
+Sem `SMTP_HOST` os emails só aparecem no log do servidor (com o link), o
+que basta para testar. Para mandar de verdade, defina:
+
+| Variável | Exemplo | Para quê |
+| --- | --- | --- |
+| `PUBLIC_URL` | `https://intriga.exemplo.com` | Base dos links nos emails (padrão: `http://localhost:<porta>`) |
+| `SMTP_HOST` | `smtp.resend.com` | Liga o envio por SMTP |
+| `SMTP_PORT` | `587` | 587 (STARTTLS) ou 465 (TLS) |
+| `SMTP_SECURE` | `true` | Força TLS direto; padrão é `true` só na 465 |
+| `SMTP_USER` / `SMTP_PASS` | | Credenciais do provedor (nunca no git) |
+| `MAIL_FROM` | `Intriga <no-reply@exemplo.com>` | Remetente |
+
+Rotas: `POST /api/auth/verify-email`, `/resend-verification` (com
+`Bearer`), `/forgot-password`, `/reset-password`, e as páginas
+`GET /verify-email?token=` e `GET /reset-password?token=`. Pelo socket:
+`account_resend_verification` e `account_forgot_password`.
 
 ## Estrutura
 

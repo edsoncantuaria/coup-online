@@ -213,11 +213,29 @@ void main() {
       final socialA = SocialService(ca);
       final socialB = SocialService(cb);
 
-      expect((await accA.register('ana_$tag', 'segredo123')).ok, isTrue);
-      expect((await accB.register('beto_$tag', 'segredo123')).ok, isTrue);
+      expect(
+        (await accA.register(
+          'ana_$tag',
+          'ana_$tag@exemplo.com',
+          'segredo123',
+        )).ok,
+        isTrue,
+      );
+      expect(
+        (await accB.register(
+          'beto_$tag',
+          'beto_$tag@exemplo.com',
+          'segredo123',
+        )).ok,
+        isTrue,
+      );
       expect(accA.user!.username, 'ana_$tag');
       expect(
-        (await accA.register('ANA_$tag', 'segredo123')).code,
+        (await accA.register(
+          'ANA_$tag',
+          'outra_$tag@exemplo.com',
+          'segredo123',
+        )).code,
         'USERNAME_TAKEN',
       );
 
