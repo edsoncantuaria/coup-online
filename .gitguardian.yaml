@@ -1,5 +1,5 @@
 version: 2
 # Os testes do servidor criam contas falsas com senhas geradas na hora.
 secret:
-  ignored-paths:
+  ignored_paths:
     - server/test/**
