@@ -21,6 +21,16 @@ flutter build apk --dart-define=COUP_SERVER_URL=https://seu-servidor
 
 O jogador também pode trocar o servidor na tela Online (fica salvo no aparelho).
 
+## Campanha
+
+Modo roguelike offline: 7 cortes em sequência, cada partida com uma punição
+sorteada (ex.: começar sem moedas, Golpe mais caro, rivais que conhecem uma
+das suas cartas). Vencer dá uma bênção à escolha; perder gasta a vida extra
+ou encerra a campanha. Punições, bênçãos e cortes ficam em
+`lib/campaign/campaign.dart`. O teste `test/campaign_test.dart` simula milhares
+de partidas para garantir que nenhuma punição deixe a corte impossível; rode
+com `--dart-define=CALIBRATE=true` para ver a tabela de taxas de vitória.
+
 ## Chat de voz
 
 Nas salas online, o ícone de fone na barra superior entra no chat de voz

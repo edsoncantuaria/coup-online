@@ -205,9 +205,15 @@ class GameOverPanel extends StatelessWidget {
     super.key,
     required this.state,
     required this.controller,
+    this.onContinue,
+    this.continueLabel = 'Continuar',
   });
   final GameState state;
   final GameController controller;
+
+  /// Substitui "Menu" e "Jogar de novo" por um único botão (campanha).
+  final VoidCallback? onContinue;
+  final String continueLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -290,25 +296,28 @@ class GameOverPanel extends StatelessWidget {
                     me: p.id == controller.myId,
                   ),
               const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Menu'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: canRestart ? controller.playAgain : null,
-                      child: Text(
-                        canRestart ? 'Jogar de novo' : 'Aguarde o anfitrião',
+              if (onContinue != null)
+                FilledButton(onPressed: onContinue, child: Text(continueLabel))
+              else
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Menu'),
                       ),
                     ),
-                  ),
-                ],
-              ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: canRestart ? controller.playAgain : null,
+                        child: Text(
+                          canRestart ? 'Jogar de novo' : 'Aguarde o anfitrião',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),

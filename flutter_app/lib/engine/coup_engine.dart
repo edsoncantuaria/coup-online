@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'house_rules.dart';
 import 'labels.dart';
 import 'models.dart';
 
@@ -33,6 +34,17 @@ class CoupEngine {
   GameState state;
   bool _gameStarted = false;
 
+  /// Variações de regra (campanha). Definir antes de [startGame].
+  HouseRules rules = HouseRules.standard;
+
+  /// Escudos restantes por jogador nesta partida.
+  final Map<String, int> shieldsLeft = {};
+
+  /// Carta de cada jogador que os bots conhecem desde o início.
+  final Map<String, Role> exposed = {};
+
+  final Map<String, int> _ownTurns = {};
+
   /// Relógio injetável (testes).
   int Function() now = () => DateTime.now().millisecondsSinceEpoch;
 
@@ -61,12 +73,18 @@ class CoupEngine {
     state.deck = _shuffle(_buildDeck());
     for (final p in state.players) {
       p.cards = [
-        GameCard(state.deck.removeLast()),
-        GameCard(state.deck.removeLast()),
+        for (var i = 0; i < rules.cardsAtStart(p.id).clamp(1, 2); i++)
+          GameCard(state.deck.removeLast()),
       ];
-      p.coins = 2;
+      p.coins = rules.coinsAtStart(p.id);
+      final shields = rules.shields[p.id];
+      if (shields != null && shields > 0) shieldsLeft[p.id] = shields;
+      if (rules.exposeOneCard.contains(p.id)) {
+        exposed[p.id] = p.cards[_rng.nextInt(p.cards.length)].role;
+      }
     }
-    state.turnIndex = _rng.nextInt(state.players.length);
+    final first = state.players.indexWhere((p) => p.id == rules.firstPlayerId);
+    state.turnIndex = first >= 0 ? first : _rng.nextInt(state.players.length);
     state.phase = Phase.action;
     state.waitingForResponseIndex = null;
     state.responses = {};
@@ -233,11 +251,18 @@ class CoupEngine {
         'Com 10 moedas ou mais o jogador é OBRIGADO a realizar um Golpe de Estado.',
       );
     }
-    if (action.type == ActionType.coup && player.coins < 7) {
-      return const ValidationResult.fail('Golpe requer 7 moedas.');
+    if (!rules.allows(playerId, action.type)) {
+      return ValidationResult.fail(
+        '${actionLabel(action.type)} está proibida para você nesta partida.',
+      );
     }
-    if (action.type == ActionType.assassinate && player.coins < 3) {
-      return const ValidationResult.fail('Assassinato requer 3 moedas.');
+    final coupCost = rules.coupCostFor(playerId);
+    if (action.type == ActionType.coup && player.coins < coupCost) {
+      return ValidationResult.fail('Golpe requer $coupCost moedas.');
+    }
+    final killCost = rules.assassinCost(action.target);
+    if (action.type == ActionType.assassinate && player.coins < killCost) {
+      return ValidationResult.fail('Assassinato requer $killCost moedas.');
     }
     if (actionNeedsTarget(action.type)) {
       if (action.target == null) {
@@ -321,11 +346,13 @@ class CoupEngine {
 
     // Paga na declaração (regra oficial).
     if (action.type == ActionType.assassinate) {
-      player.coins -= 3;
-      _recordCoinChange(player.id, -3);
+      final cost = rules.assassinCost(action.target);
+      player.coins -= cost;
+      _recordCoinChange(player.id, -cost);
     } else if (action.type == ActionType.coup) {
-      player.coins -= 7;
-      _recordCoinChange(player.id, -7);
+      final cost = rules.coupCostFor(player.id);
+      player.coins -= cost;
+      _recordCoinChange(player.id, -cost);
     }
 
     if (isChallengeable(action.type)) {
@@ -632,7 +659,7 @@ class CoupEngine {
       case ActionType.steal:
         final target = state.playerById(action.target);
         if (target != null) {
-          final amount = min(target.coins, 2);
+          final amount = min(target.coins, rules.stealFor(source.id));
           target.coins -= amount;
           source.coins += amount;
           _recordCoinChange(source.id, amount);
@@ -708,6 +735,19 @@ class CoupEngine {
     state.pendingBlock = null;
     state.responses = {};
     _addLog('📍 Turno de ${currentPlayer.name}');
+    _chargeTurnTax(currentPlayer);
+  }
+
+  void _chargeTurnTax(Player p) {
+    final every = rules.turnTax[p.id];
+    if (every == null || every <= 0) return;
+    final n = (_ownTurns[p.id] ?? 0) + 1;
+    _ownTurns[p.id] = n;
+    if (n % every == 0 && p.coins > 0) {
+      p.coins -= 1;
+      _recordCoinChange(p.id, -1);
+      _addLog('👑 Pedágio Real: ${p.name} pagou 1 moeda à Coroa.');
+    }
   }
 
   bool _checkWinner() {
@@ -753,6 +793,13 @@ class CoupEngine {
     if (player == null) return false;
     final alive = player.cards.where((c) => !c.isFlipped).toList();
     if (alive.isEmpty) return false;
+
+    final shields = shieldsLeft[playerId] ?? 0;
+    if (shields > 0) {
+      shieldsLeft[playerId] = shields - 1;
+      _addLog('🛡️ O Véu da Condessa protegeu ${player.name} da perda.');
+      return false;
+    }
 
     if (alive.length == 1) {
       final card = alive.first;

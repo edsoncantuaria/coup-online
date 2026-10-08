@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../engine/labels.dart';
 import '../../engine/models.dart';
 import '../theme.dart';
 import 'common.dart';
@@ -18,6 +19,7 @@ class OpponentSeat extends StatelessWidget {
     this.statusLabel,
     this.voice,
     this.anchorKey,
+    this.peek,
   });
 
   final Player player;
@@ -33,6 +35,9 @@ class OpponentSeat extends StatelessWidget {
 
   /// Marca a posição do avatar para as animações da mesa.
   final Key? anchorKey;
+
+  /// Carta deste rival que você conhece (bênção Olho Clínico).
+  final Role? peek;
 
   @override
   Widget build(BuildContext context) {
@@ -124,6 +129,29 @@ class OpponentSeat extends StatelessWidget {
                 CoinBadge(coins: player.coins),
               ],
             ),
+            if (peek != null && !revealAll)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.remove_red_eye,
+                      size: 11,
+                      color: roleStyle(peek!).accent,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      roleLabel(peek!),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: roleStyle(peek!).accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),

@@ -87,13 +87,35 @@ class BotBrain {
     final mine = bot.aliveRoles;
     bool has(Role r) => mine.contains(r);
 
+    final coupCost = engine.rules.coupCostFor(botId);
+    // Alvo com assassinato barato (punição "Alvo Marcado") atrai os bots.
+    final cheap = _s.players
+        .where(
+          (p) =>
+              p.id != botId &&
+              p.isAlive &&
+              engine.rules.assassinCost(p.id) < 3 &&
+              bot.coins >= engine.rules.assassinCost(p.id),
+        )
+        .map((p) => p.id)
+        .firstOrNull;
+    if (cheap != null &&
+        bot.coins < coupCost &&
+        _r() < 0.35 + t.aggression * 0.4) {
+      return GameAction(
+        type: ActionType.assassinate,
+        source: botId,
+        target: cheap,
+      );
+    }
+
     if (bot.coins >= 10) {
       final tgt = _threateningTarget(botId);
       if (tgt != null) {
         return GameAction(type: ActionType.coup, source: botId, target: tgt);
       }
     }
-    if (bot.coins >= 7 && _r() < t.aggression * 0.6) {
+    if (bot.coins >= coupCost && _r() < t.aggression * 0.6) {
       final tgt = _threateningTarget(botId);
       if (tgt != null) {
         return GameAction(type: ActionType.coup, source: botId, target: tgt);
@@ -152,10 +174,13 @@ class BotBrain {
         }
         final knowsNot =
             !o.knownRoles.contains(pb.role) && o.knownRoles.isNotEmpty;
+        final spied = _spied(pb.blockerId, pb.role);
+        if (spied != null) return BotResponse(spied);
         final rate =
             t.challengeRate +
             (knowsNot ? 0.25 : 0) +
-            _impossibleBonus(pb.role, mine);
+            _impossibleBonus(pb.role, mine) +
+            engine.rules.challengeBias(pb.blockerId);
         return _r() < rate
             ? const BotResponse(ResponseType.challenge)
             : const BotResponse(ResponseType.pass);
@@ -207,7 +232,12 @@ class BotBrain {
       if (o.provenRoles.contains(claim)) {
         return const BotResponse(ResponseType.pass);
       }
-      var rate = t.challengeRate + _impossibleBonus(claim, mine);
+      final spied = _spied(action.source, claim);
+      if (spied != null) return BotResponse(spied);
+      var rate =
+          t.challengeRate +
+          _impossibleBonus(claim, mine) +
+          engine.rules.challengeBias(action.source);
       rate += min(0.2, o.bluffsCaught * 0.08);
       // Desafiar quando eu mesmo sou o alvo de um assassinato vale mais.
       if (action.type == ActionType.assassinate && action.target == botId) {
@@ -218,6 +248,20 @@ class BotBrain {
           : const BotResponse(ResponseType.pass);
     }
     return const BotResponse(ResponseType.pass);
+  }
+
+  /// Decisão certeira quando os bots espionaram a carta de [playerId]
+  /// (punição "Espiões na Corte"): se ele afirma a carta que sabemos que
+  /// tem, acreditamos; se só lhe resta outra carta, desafiamos.
+  ResponseType? _spied(String playerId, Role claim) {
+    final known = engine.exposed[playerId];
+    final p = _s.playerById(playerId);
+    if (known == null || p == null || !p.aliveRoles.contains(known)) {
+      return null;
+    }
+    if (claim == known) return ResponseType.pass;
+    if (p.influence == 1) return ResponseType.challenge;
+    return null;
   }
 
   /// Aumenta a chance de desafiar quando as 3 cópias de [role] já estão

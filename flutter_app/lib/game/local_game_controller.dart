@@ -3,6 +3,7 @@ import 'dart:math';
 
 import '../engine/bot.dart';
 import '../engine/coup_engine.dart';
+import '../engine/house_rules.dart';
 import '../engine/models.dart';
 import 'bot_names.dart';
 import 'game_controller.dart';
@@ -15,6 +16,8 @@ class LocalGameController extends GameController {
     this.personalities,
     this.botDelay = const Duration(milliseconds: 1100),
     this.turnSeconds = 30,
+    this.houseRules = HouseRules.standard,
+    this.keenEye = false,
     Random? random,
   }) : _rng = random ?? Random() {
     _newMatch();
@@ -25,7 +28,12 @@ class LocalGameController extends GameController {
   final List<BotPersonality>? personalities;
   final Duration botDelay;
   final int turnSeconds;
+  final HouseRules houseRules;
+  final bool keenEye;
   final Random _rng;
+  final Map<String, Role> _peeks = {};
+  String? _notice;
+  int _shields = 0;
 
   late CoupEngine _engine;
   late BotBrain _brain;
@@ -58,6 +66,24 @@ class LocalGameController extends GameController {
   @override
   int get turnTimerTotal => turnSeconds;
 
+  @override
+  HouseRules get rules => houseRules;
+
+  @override
+  Map<String, Role> get peeks => {
+    for (final e in _peeks.entries)
+      // Some quando o rival perde ou troca aquela carta.
+      if (state.playerById(e.key)?.aliveRoles.contains(e.value) ?? false)
+        e.key: e.value,
+  };
+
+  @override
+  String? takeNotice() {
+    final n = _notice;
+    _notice = null;
+    return n;
+  }
+
   void _newMatch() {
     _engine = CoupEngine('offline', random: _rng);
     _engine.addPlayer(humanId, playerName.isEmpty ? 'Jogador' : playerName);
@@ -68,7 +94,15 @@ class LocalGameController extends GameController {
           : BotPersonality.values[_rng.nextInt(BotPersonality.values.length)];
       _engine.addPlayer('bot-$i', names[i], isBot: true, personality: p);
     }
+    _engine.rules = houseRules;
     _engine.startGame();
+    _shields = _engine.shieldsLeft[humanId] ?? 0;
+    _peeks.clear();
+    if (keenEye) {
+      for (final p in state.players.where((p) => p.isBot)) {
+        _peeks[p.id] = p.cards[_rng.nextInt(p.cards.length)].role;
+      }
+    }
     _brain = BotBrain(_engine, random: _rng);
     _afterMutation(initial: true);
   }
@@ -79,6 +113,11 @@ class LocalGameController extends GameController {
     _botTimer?.cancel();
     _stopClock();
     _busy = true;
+    final shields = _engine.shieldsLeft[humanId] ?? 0;
+    if (shields < _shields) {
+      _notice = 'O Véu da Condessa protegeu você de perder uma influência!';
+    }
+    _shields = shields;
     notifyListeners();
     _botTimer = Timer(
       initial ? const Duration(milliseconds: 600) : botDelay,

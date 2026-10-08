@@ -6,6 +6,7 @@ import '../../game/local_game_controller.dart';
 import '../../settings.dart';
 import '../theme.dart';
 import '../widgets/influence_card.dart';
+import 'campaign_screen.dart';
 import 'game_screen.dart';
 import 'online_screen.dart';
 import 'rules_screen.dart';
@@ -49,6 +50,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => GameScreen(controller: controller)),
+    );
+  }
+
+  void _playCampaign() {
+    Settings.save(name: _name.text.trim());
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CampaignScreen(playerName: _playerName),
+      ),
     );
   }
 
@@ -133,8 +143,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
+                  _CampaignButton(onTap: _playCampaign),
+                  const SizedBox(height: 16),
                   _Section(
-                    title: 'CONTRA BOTS',
+                    title: 'PARTIDA LIVRE',
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -245,6 +257,67 @@ class _Section extends StatelessWidget {
         const SizedBox(height: 8),
         child,
       ],
+    ),
+  );
+}
+
+class _CampaignButton extends StatelessWidget {
+  const _CampaignButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    borderRadius: BorderRadius.circular(18),
+    clipBehavior: Clip.antiAlias,
+    child: Ink(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF5A1A1A), Color(0xFF2A0D0D)],
+        ),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: CoupColors.goldSoft),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.castle, color: CoupColors.goldHigh, size: 36),
+              SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'CAMPANHA',
+                      style: TextStyle(
+                        letterSpacing: 3,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                        color: CoupColors.goldHigh,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      '7 cortes até o trono. Uma punição sorteada a cada partida.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: CoupColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: CoupColors.goldHigh),
+            ],
+          ),
+        ),
+      ),
     ),
   );
 }

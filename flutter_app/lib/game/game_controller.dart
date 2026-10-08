@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../engine/house_rules.dart';
 import '../engine/models.dart';
 
 /// Contrato comum entre partida offline (motor local + bots) e online
@@ -43,6 +44,12 @@ abstract class GameController extends ChangeNotifier {
   void leave();
 
   Player? get me => state?.playerById(myId);
+
+  /// Regras da partida (campanha); online é sempre o Coup oficial.
+  HouseRules get rules => HouseRules.standard;
+
+  /// Cartas dos rivais que o jogador local pode ver (bênção Olho Clínico).
+  Map<String, Role> get peeks => const {};
 
   /// De quem o jogo espera uma decisão agora.
   String? get pendingActorId {

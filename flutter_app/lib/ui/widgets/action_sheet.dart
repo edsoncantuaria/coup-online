@@ -48,10 +48,15 @@ class _ActionSheet extends StatelessWidget {
       });
     }
 
+    final coupCost = c.rules.coupCostFor(me.id);
+    final steal = c.rules.stealFor(me.id);
     String? whyNot(ActionType t) {
+      if (!c.rules.allows(me.id, t)) return 'Proibida nesta partida';
       if (!myTurn) return null;
       if (me.coins >= 10 && t != ActionType.coup) return 'Golpe obrigatório';
-      if (t == ActionType.coup && me.coins < 7) return 'Precisa de 7';
+      if (t == ActionType.coup && me.coins < coupCost) {
+        return 'Precisa de $coupCost';
+      }
       if (t == ActionType.assassinate && me.coins < 3) return 'Precisa de 3';
       if (CoupEngine.actionNeedsTarget(t) && _targets(s, me, t).isEmpty) {
         return 'Sem alvo';
@@ -136,13 +141,17 @@ class _ActionSheet extends StatelessWidget {
                 grid([
                   tile(ActionType.income, '+1 moeda'),
                   tile(ActionType.foreignAid, '+2 · Duque bloqueia'),
-                  tile(ActionType.coup, '-7 · sem defesa'),
+                  tile(ActionType.coup, '-$coupCost · sem defesa'),
                 ]),
                 const SizedBox(height: 12),
                 const _GroupLabel('Personagens'),
                 grid([
                   tile(ActionType.tax, 'Duque · +3', role: Role.duke),
-                  tile(ActionType.steal, 'Capitão · +2', role: Role.captain),
+                  tile(
+                    ActionType.steal,
+                    'Capitão · +$steal',
+                    role: Role.captain,
+                  ),
                   tile(
                     ActionType.assassinate,
                     'Assassino · -3',

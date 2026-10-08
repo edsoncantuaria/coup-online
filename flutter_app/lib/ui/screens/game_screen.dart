@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../campaign/campaign.dart';
 import '../../engine/models.dart';
 import '../../game/game_controller.dart';
 import '../../game/online_game_controller.dart';
@@ -18,8 +19,13 @@ import 'rules_screen.dart';
 const _wideBreakpoint = 900.0;
 
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key, required this.controller});
+  const GameScreen({super.key, required this.controller, this.campaign});
   final GameController controller;
+
+  /// Partida de campanha: mostra as punições e, no fim, devolve à tela da
+  /// campanha `true` (vitória) ou `false` (derrota). Sair no meio conta
+  /// como derrota.
+  final CampaignRun? campaign;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -82,6 +88,8 @@ class _GameScreenState extends State<GameScreen> {
 
   bool get _canLeaveFreely {
     final s = c.state;
+    // Na campanha a saída sempre passa por aqui, para devolver o resultado.
+    if (widget.campaign != null) return false;
     return s == null || !c.started || s.phase == Phase.gameOver;
   }
 
@@ -94,6 +102,8 @@ class _GameScreenState extends State<GameScreen> {
         content: Text(
           c.isOnline
               ? 'Você será removido da sala e não poderá voltar a esta partida.'
+              : widget.campaign != null
+              ? 'Sair agora conta como derrota na campanha.'
               : 'A partida atual será perdida.',
         ),
         actions: [
@@ -124,7 +134,13 @@ class _GameScreenState extends State<GameScreen> {
     return PopScope(
       canPop: _canLeaveFreely,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _confirmLeave();
+        if (didPop) return;
+        final s = c.state;
+        if (widget.campaign != null && s?.phase == Phase.gameOver) {
+          Navigator.of(context).pop(s!.winner == c.myId);
+        } else {
+          _confirmLeave();
+        }
       },
       child: Scaffold(
         appBar: AppBar(
@@ -196,7 +212,12 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Widget _title(GameState? s) {
-    final main = c.isOnline ? 'Sala ${c.roomCode ?? ''}' : 'Coup';
+    final run = widget.campaign;
+    final main = c.isOnline
+        ? 'Sala ${c.roomCode ?? ''}'
+        : run != null
+        ? 'Corte ${run.court + 1}/${courts.length}'
+        : 'Coup';
     final stats = s?.matchStats;
     return Column(
       children: [
@@ -229,6 +250,7 @@ class _GameScreenState extends State<GameScreen> {
           anchors: _anchors,
           child: Column(
             children: [
+              if (widget.campaign != null) _CurseStrip(run: widget.campaign!),
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 14, 8, 0),
                 child: _opponents(s, wide),
@@ -269,7 +291,16 @@ class _GameScreenState extends State<GameScreen> {
         ),
         if (s.phase == Phase.gameOver)
           Positioned.fill(
-            child: GameOverPanel(state: s, controller: c),
+            child: GameOverPanel(
+              state: s,
+              controller: c,
+              onContinue: widget.campaign == null
+                  ? null
+                  : () => Navigator.of(context).pop(s.winner == c.myId),
+              continueLabel: s.winner == c.myId
+                  ? 'Seguir para a próxima corte'
+                  : 'Voltar à campanha',
+            ),
           ),
       ],
     );
@@ -300,6 +331,7 @@ class _GameScreenState extends State<GameScreen> {
                 revealAll: s.phase == Phase.gameOver,
                 voice: _voice?.voiceOf(p.id),
                 anchorKey: _anchors.keyFor(p.id),
+                peek: c.peeks[p.id],
                 state: pending == p.id && inResponse
                     ? SeatState.waiting
                     : s.currentPlayer?.id == p.id && s.phase != Phase.gameOver
@@ -316,6 +348,94 @@ class _GameScreenState extends State<GameScreen> {
           ],
         );
       },
+    );
+  }
+}
+
+/// Faixa com as punições e bênçãos ativas na partida de campanha. Tocar
+/// abre a descrição de cada uma.
+class _CurseStrip extends StatelessWidget {
+  const _CurseStrip({required this.run});
+  final CampaignRun run;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      for (final c in run.curses)
+        (curseInfo[c]!.icon, curseInfo[c]!.name, CoupColors.error),
+      for (final b in run.blessings.toSet())
+        (blessingInfo[b]!.icon, blessingInfo[b]!.name, CoupColors.success),
+    ];
+    return Material(
+      color: CoupColors.secondary,
+      child: InkWell(
+        onTap: () => showModalBottomSheet<void>(
+          context: context,
+          backgroundColor: CoupColors.secondary,
+          showDragHandle: true,
+          builder: (_) => SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              children: [
+                for (final c in run.curses)
+                  ListTile(
+                    leading: Icon(curseInfo[c]!.icon, color: CoupColors.error),
+                    title: Text(curseInfo[c]!.name),
+                    subtitle: Text(curseInfo[c]!.description),
+                  ),
+                for (final b in run.blessings.toSet())
+                  ListTile(
+                    leading: Icon(
+                      blessingInfo[b]!.icon,
+                      color: CoupColors.success,
+                    ),
+                    title: Text(
+                      run.count(b) > 1
+                          ? '${blessingInfo[b]!.name} ×${run.count(b)}'
+                          : blessingInfo[b]!.name,
+                    ),
+                    subtitle: Text(blessingInfo[b]!.description),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        child: SizedBox(
+          height: 34,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            children: [
+              for (final (icon, name, color) in items)
+                Container(
+                  margin: const EdgeInsets.only(right: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: color.withValues(alpha: 0.5)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(icon, size: 13, color: color),
+                      const SizedBox(width: 4),
+                      Text(
+                        name,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: color,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
