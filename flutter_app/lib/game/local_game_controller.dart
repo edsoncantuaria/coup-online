@@ -55,9 +55,12 @@ class LocalGameController extends GameController {
   @override
   int? get turnTimer => _turnTimer;
 
+  @override
+  int get turnTimerTotal => turnSeconds;
+
   void _newMatch() {
     _engine = CoupEngine('offline', random: _rng);
-    _engine.addPlayer(humanId, playerName.isEmpty ? 'Você' : playerName);
+    _engine.addPlayer(humanId, playerName.isEmpty ? 'Jogador' : playerName);
     final names = pickBotNames(botCount, _rng);
     for (var i = 0; i < botCount; i++) {
       final p = personalities != null && i < personalities!.length

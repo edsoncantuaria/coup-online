@@ -46,17 +46,19 @@ void main() {
 
         for (
           var i = 0;
-          i < 3000 && find.text('JOGAR DE NOVO').evaluate().isEmpty;
+          i < 3000 && find.text('Jogar de novo').evaluate().isEmpty;
           i++
         ) {
           await tester.pump(const Duration(milliseconds: 200));
         }
-        expect(find.text('JOGAR DE NOVO'), findsOneWidget);
+        expect(find.text('Jogar de novo'), findsOneWidget);
         expect(tester.takeException(), isNull);
 
-        await tester.tap(find.text('JOGAR DE NOVO'));
+        await tester.ensureVisible(find.text('Jogar de novo'));
+        await tester.pump();
+        await tester.tap(find.text('Jogar de novo'));
         await tester.pump(const Duration(seconds: 1));
-        expect(find.text('JOGAR DE NOVO'), findsNothing);
+        expect(find.text('Jogar de novo'), findsNothing);
 
         await tester.pumpWidget(const SizedBox());
       },

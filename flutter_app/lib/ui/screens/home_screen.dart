@@ -36,7 +36,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String get _playerName =>
-      _name.text.trim().isEmpty ? 'Você' : _name.text.trim();
+      _name.text.trim().isEmpty ? 'Jogador' : _name.text.trim();
 
   void _playOffline() {
     Settings.save(name: _name.text.trim());

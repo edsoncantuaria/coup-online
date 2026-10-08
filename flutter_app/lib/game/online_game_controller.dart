@@ -37,6 +37,8 @@ class OnlineGameController extends GameController {
 
   bool get inRoom => _roomCode != null && _state != null;
 
+  String? get hostId => _hostId;
+
   bool get amHost => _hostId != null && _hostId == myId;
 
   @override

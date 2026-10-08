@@ -60,9 +60,7 @@ class CoupEngine {
   }
 
   void startGame() {
-    _addLog('⚙️ Iniciando motor de jogo...');
     state.deck = _shuffle(_buildDeck());
-    _addLog('⚙️ Baralho inicializado com ${state.deck.length} cartas.');
     for (final p in state.players) {
       p.cards = [
         GameCard(state.deck.removeLast()),
@@ -347,9 +345,6 @@ class CoupEngine {
       state.responderCycleStartIndex = state.turnIndex;
       _setNextResponder(state.turnIndex);
     } else {
-      _addLog(
-        '✅ $actionName não pode ser desafiado nem bloqueado. Resolvendo...',
-      );
       resolveAction();
     }
   }
@@ -619,7 +614,6 @@ class CoupEngine {
     if (action == null) return;
     state.currentAction = null;
 
-    _addLog('✨ Ação ${actionLabel(action.type)} resolvida.');
     final source = state.playerById(action.source);
     if (source == null) return;
 
@@ -693,7 +687,6 @@ class CoupEngine {
 
   void nextTurn() {
     if (state.phase == Phase.gameOver) return;
-    _addLog('🔄 Passando o turno...');
     final previous = state.turnIndex;
     state.turnIndex = (state.turnIndex + 1) % state.players.length;
     if (state.matchStats != null &&

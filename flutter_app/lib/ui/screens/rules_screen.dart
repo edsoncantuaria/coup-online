@@ -37,6 +37,7 @@ class RulesScreen extends StatelessWidget {
           ),
           bottom: const TabBar(
             indicatorColor: CoupColors.gold,
+            dividerColor: CoupColors.border,
             labelColor: CoupColors.goldHigh,
             tabs: [
               Tab(text: 'Cartas'),

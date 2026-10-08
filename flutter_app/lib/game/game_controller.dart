@@ -14,6 +14,9 @@ abstract class GameController extends ChangeNotifier {
   /// Segundos restantes para o jogador local decidir (null = sem relógio).
   int? get turnTimer => null;
 
+  /// Duração total do relógio de decisão (para a barra de progresso).
+  int get turnTimerTotal => 30;
+
   /// Verdadeiro enquanto a mesa "respira" entre jogadas (inputs travados).
   bool get busy => false;
 
