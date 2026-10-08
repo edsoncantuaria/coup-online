@@ -393,7 +393,7 @@ class _Intro extends StatelessWidget {
     final (best, crowns) = record;
     return _Stage(
       role: Role.duke,
-      cue: 'SETE CAPÍTULOS ATÉ O TRONO',
+      cue: 'SETE CORTES ATÉ O TRONO',
       title: const _TitleCard('A Ascensão ao Trono'),
       children: [
         CueButton(
@@ -416,7 +416,7 @@ class _Intro extends StatelessWidget {
         const _Credit(
           'Sete cortes',
           'Atravesse 7 cortes, da Vila de Pedra ao Trono de Ferro. Cada '
-              'uma é um capítulo da temporada.',
+              'uma é uma mesa nova, mais difícil que a anterior.',
         ),
         const _Credit(
           'Uma punição por partida',

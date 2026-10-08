@@ -192,7 +192,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     final campaignTitle = run == null
         ? 'Começar a campanha'
-        : 'Continuar o capítulo ${run.court + 1}';
+        : 'Continuar na corte ${run.court + 1}';
     final campaignCredit = run == null
         ? best > 0
               ? 'Sete cortes até o trono · recorde: $best'
