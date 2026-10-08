@@ -1,0 +1,40 @@
+# Coup em Flutter
+
+Nova versão do Coup para **Android, iOS e Web**, num único código Flutter.
+Substitui o app Expo/React Native de `client/` e conversa com o mesmo servidor de `server/`.
+
+## Rodar
+
+```bash
+cd flutter_app
+flutter pub get
+flutter run -d chrome          # web
+flutter run                    # Android/iOS com aparelho ou emulador
+```
+
+O endereço padrão do servidor online é `http://localhost:3000`. Para um build apontando para outro servidor:
+
+```bash
+flutter build web --dart-define=COUP_SERVER_URL=https://seu-servidor
+flutter build apk --dart-define=COUP_SERVER_URL=https://seu-servidor
+```
+
+O jogador também pode trocar o servidor na tela Online (fica salvo no aparelho).
+
+## Estrutura
+
+| Pasta | O que tem |
+| --- | --- |
+| `lib/engine/` | Regras do Coup (`coup_engine.dart`), modelos e IA dos bots. Dart puro, sem Flutter. Porta fiel de `client/engine/CoupEngine.ts`. |
+| `lib/game/` | Controladores de partida: `LocalGameController` (offline contra bots) e `OnlineGameController` (socket.io). A UI só conhece a interface `GameController`. |
+| `lib/ui/` | Tema, cartas, assentos da mesa e telas (menu, mesa, online, regras). |
+| `assets/cards/` | Arte das cartas (a mesma do app antigo). |
+
+## Testes
+
+```bash
+flutter test                                   # regras, bots e partidas completas na UI
+# ponta a ponta com o servidor real:
+(cd ../server && npx tsc && PORT=3999 BOT_DELAY_MS=30 node dist/index.js) &
+COUP_E2E_URL=http://localhost:3999 flutter test test/online_e2e_test.dart
+```
