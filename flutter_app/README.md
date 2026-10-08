@@ -61,11 +61,57 @@ flutter run --dart-define=COUP_TURN_URL=turn:seu-host:3478 \
   --dart-define=COUP_TURN_USER=usuario --dart-define=COUP_TURN_PASS=senha
 ```
 
+## Contas, Buscar partida, amigos e denúncias
+
+A camada de dados fica em `lib/online/` (as telas ainda vão usá-la):
+
+| Arquivo | O que faz |
+| --- | --- |
+| `online_connection.dart` | `OnlineConnection`: um socket só para conta, lobby, amigos e partida. `request()` manda um evento e espera o ack (`ServerReply`). |
+| `account_service.dart` | `AccountService`: criar conta, entrar, sair, `restore()` da sessão salva (token no `SharedPreferences`). Quem não entra joga como convidado. |
+| `lobby_service.dart` | `LobbyService`: salas abertas (`rooms`, `watchRooms()`) e fila de partida (`joinQueue()`, `queueStatus`, `queueStatusStream`, `matchFound`). |
+| `social_service.dart` | `SocialService`: amigos com situação ao vivo, pedidos, convite para a sala (`inviteToRoom`, stream `invites`) e denúncias (`report`). |
+
+Para jogar a partida da fila ou entrar por convite, crie o controlador com a
+mesma conexão: `OnlineGameController.shared(connection)`.
+
+- **Contas**: usuário (3 a 20 letras, números, `.`, `-`, `_`) e senha (6+).
+  Logado, o nome na mesa é sempre o da conta.
+- **Buscar partida**: a fila junta quem está sem sala numa partida pública.
+  Com 6 na fila começa na hora; com 4 ou 5, espera uns segundos por mais
+  gente; se o primeiro da fila esperar 20 s, bots completam a mesa (até 4).
+- **Salas abertas**: aparecem as salas públicas no lobby, com quem criou e
+  quantos lugares estão ocupados. Salas privadas (marcadas como privadas ou
+  com senha) só entram por código ou convite.
+- **Amigos**: depois de jogar com alguém logado, peça amizade pelo id da conta
+  (`OnlineGameController.userIdOf`) ou pelo nome de usuário; o outro aceita.
+  A lista mostra offline, online, buscando partida, no lobby ou em partida.
+  Convite para sala vale 10 minutos e dispensa a senha.
+- **Denúncias**: abuso no chat de voz ou antijogo, com observação opcional
+  (até 280 caracteres), contra quem jogou com você. Limite de 5 a cada 10
+  minutos por conta (convidados: por IP) e uma por jogador por partida.
+
+### Onde o servidor guarda os dados
+
+Em JSON, na pasta `DATA_DIR` (padrão `server/data/`, fora do git):
+
+- `accounts.json`: contas e sessões. A senha fica só como hash scrypt com
+  sal aleatório; das sessões fica só o sha256 do token.
+- `reports.json`: `reports` (cada denúncia, com quem, quem, sala, motivo e
+  observação) e `counts` (total por jogador denunciado, por conta ou
+  `guest:<nome>`). Ainda não há painel; consulte o arquivo direto.
+
+Ajustes por variável de ambiente: `QUEUE_BOT_FILL_MS` (20000),
+`QUEUE_GATHER_MS` (8000), `QUEUE_MIN_PLAYERS` (4), `QUEUE_BOT_FILL_TARGET` (4),
+`REPORT_LIMIT` (5), `REPORT_WINDOW_MS` (600000), `REGISTER_LIMIT` (20 contas
+por IP por hora) e `TRUST_PROXY=1` atrás de proxy reverso.
+
 ## Estrutura
 
 | Pasta | O que tem |
 | --- | --- |
 | `lib/engine/` | Regras do Coup (`coup_engine.dart`), modelos e IA dos bots. Dart puro, sem Flutter. Porta fiel de `client/engine/CoupEngine.ts`. |
+| `lib/online/` | Conta, salas abertas, fila de partida, amigos e denúncias (sem telas). |
 | `lib/game/` | Controladores de partida: `LocalGameController` (offline contra bots) e `OnlineGameController` (socket.io). A UI só conhece a interface `GameController`. |
 | `lib/ui/` | Tema, cartas, assentos da mesa e telas (menu, mesa, online, regras). |
 | `assets/cards/` | Arte das cartas (a mesma do app antigo). |
@@ -75,6 +121,9 @@ flutter run --dart-define=COUP_TURN_URL=turn:seu-host:3478 \
 ```bash
 flutter test                                   # regras, bots e partidas completas na UI
 # ponta a ponta com o servidor real:
-(cd ../server && npx tsc && PORT=3999 BOT_DELAY_MS=30 node dist/index.js) &
+(cd ../server && npx tsc && PORT=3999 BOT_DELAY_MS=30 QUEUE_BOT_FILL_MS=3000 \
+  DATA_DIR=/tmp/intriga-e2e node dist/index.js) &
 COUP_E2E_URL=http://localhost:3999 flutter test test/online_e2e_test.dart
+# servidor: contas, fila, salas abertas, amigos e denúncias
+(cd ../server && npm test)
 ```

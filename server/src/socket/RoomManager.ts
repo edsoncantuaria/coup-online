@@ -2,12 +2,15 @@ import { Server, Socket } from 'socket.io';
 import { CoupEngine } from '../engine/CoupEngine.js';
 import { BotManager } from '../engine/BotManager.js';
 import type { Action, BotPersonality, GameState, Role } from '../engine/types.js';
+import { AppError, cleanText } from '../errors.js';
 
-/** Atraso entre jogadas de bots, para a mesa ter tempo de animar. */
-const BOT_DELAY_MS = Number(process.env.BOT_DELAY_MS ?? 1400);
 /** Tempo máximo para um humano decidir antes da IA jogar por ele. */
 const HUMAN_TIMEOUT_MS = 45_000;
-const MAX_PLAYERS = 6;
+export const MAX_PLAYERS = 6;
+/** Convite de amigo vale por este tempo. */
+const INVITE_TTL_MS = 10 * 60 * 1000;
+/** Quantos jogadores recentes cada socket lembra (para denúncias). */
+const RECENT_LIMIT = 40;
 
 const PERSONALITIES: BotPersonality[] = ['cautious', 'tyrant', 'bluffer', 'balanced'];
 const BOT_NAMES = [
@@ -24,6 +27,32 @@ type RoomEntry = {
   timer?: ReturnType<typeof setTimeout>;
   /** Quem está no chat de voz da sala → microfone mudo? */
   voice: Map<string, boolean>;
+  /** Sala privada (só por código): não aparece na lista de salas abertas. */
+  isPrivate: boolean;
+  /** Criada pela fila de "Buscar partida". */
+  matchmade: boolean;
+  /** id do jogador (socket) → id da conta, para quem está logado. */
+  accounts: Map<string, string>;
+  /** Convites pendentes: id da conta → expira em (ms). */
+  invites: Map<string, number>;
+  /** Última situação avisada aos amigos (partida rolando ou não). */
+  wasActive: boolean;
+};
+
+/** Um jogador com quem o socket dividiu a mesa recentemente. */
+export type RecentPlayer = { playerId: string; name: string; userId?: string; roomId: string; at: number };
+
+export type MatchMember = { socketId: string; name: string };
+
+export type RoomHooks = {
+  /** Conta logada no socket (a identidade nunca vem do cliente). */
+  accountOf: (socketId: string) => { userId: string; username: string } | undefined;
+  /** O socket entrou numa sala (sai da fila de partida). */
+  onJoined: (socketId: string) => void;
+  /** Mudou a situação desses sockets (lobby, partida, livre) — avisar amigos. */
+  onPresence: (socketIds: string[]) => void;
+  /** Mudou algo na lista de salas abertas. */
+  onRoomsChanged: () => void;
 };
 
 function normRoomId(id: unknown): string {
@@ -56,23 +85,154 @@ function pendingActor(st: GameState): string | undefined {
   }
 }
 
+function isActive(entry: RoomEntry): boolean {
+  return entry.engine.isGameStarted() && entry.engine.getState().phase !== 'game_over';
+}
+
 export class RoomManager {
   private rooms: Map<string, RoomEntry> = new Map();
   /** socket.id → roomId */
   private socketToRoom: Map<string, string> = new Map();
+  /** socket.id → jogadores com quem dividiu a mesa (id do jogador → dados). */
+  private recent: Map<string, Map<string, RecentPlayer>> = new Map();
 
-  constructor(private io: Server) {}
+  constructor(
+    private io: Server,
+    private hooks: RoomHooks,
+    private botDelayMs = Number(process.env.BOT_DELAY_MS ?? 1400),
+  ) {}
 
-  /** Lista salas para o lobby. */
+  /** Salas públicas que ainda aceitam jogadores, para a lista do lobby. */
   public getLobbySummaries() {
-    return [...this.rooms.entries()].map(([roomId, entry]) => ({
-      roomId,
-      displayName: entry.displayName,
-      players: entry.engine.getState().players.length,
-      maxPlayers: MAX_PLAYERS,
-      hasPassword: !!entry.passwordPlain,
-      inGame: entry.engine.isGameStarted(),
-    }));
+    const out = [];
+    for (const [roomId, entry] of this.rooms) {
+      if (entry.isPrivate || entry.passwordPlain || entry.engine.isGameStarted()) continue;
+      const players = entry.engine.getState().players;
+      if (players.length >= MAX_PLAYERS) continue;
+      const host = players.find((p) => p.id === entry.hostId);
+      out.push({
+        roomId,
+        displayName: entry.displayName,
+        hostName: host?.name ?? '',
+        ...(entry.accounts.get(entry.hostId) ? { hostUserId: entry.accounts.get(entry.hostId) } : {}),
+        players: players.length,
+        humans: players.filter((p) => !p.isBot).length,
+        maxPlayers: MAX_PLAYERS,
+        hasPassword: false,
+        inGame: false,
+      });
+    }
+    return out;
+  }
+
+  /** Nome na mesa: o da conta, se logado; senão o que o cliente mandou. */
+  private nameFor(socketId: string, requested: unknown): string {
+    const acc = this.hooks.accountOf(socketId);
+    if (acc) return acc.username;
+    return typeof requested === 'string' ? cleanText(requested, 24) : '';
+  }
+
+  public roomOf(socketId: string): string | undefined {
+    return this.socketToRoom.get(socketId);
+  }
+
+  /** Situação do socket para a lista de amigos. */
+  public statusOf(socketId: string): 'in_match' | 'in_lobby' | undefined {
+    const roomId = this.socketToRoom.get(socketId);
+    const entry = roomId ? this.rooms.get(roomId) : undefined;
+    if (!entry) return undefined;
+    return isActive(entry) ? 'in_match' : 'in_lobby';
+  }
+
+  public recentPlayer(socketId: string, playerId: string): RecentPlayer | undefined {
+    return this.recent.get(socketId)?.get(playerId);
+  }
+
+  private newRoomId(): string {
+    let roomId = '';
+    do {
+      roomId = Math.random().toString(36).substring(2, 7).toUpperCase();
+    } while (roomId.length < 5 || this.rooms.has(roomId));
+    return roomId;
+  }
+
+  private addHuman(entry: RoomEntry, roomId: string, socket: Pick<Socket, 'id' | 'join'>, name: string) {
+    entry.engine.addPlayer(socket.id, name);
+    const acc = this.hooks.accountOf(socket.id);
+    if (acc) {
+      entry.accounts.set(socket.id, acc.userId);
+      entry.invites.delete(acc.userId);
+    }
+    socket.join(roomId);
+    this.socketToRoom.set(socket.id, roomId);
+    this.hooks.onJoined(socket.id);
+  }
+
+  private newEntry(engine: CoupEngine, displayName: string, hostId: string): RoomEntry {
+    return {
+      engine,
+      displayName,
+      hostId,
+      voice: new Map(),
+      isPrivate: false,
+      matchmade: false,
+      accounts: new Map(),
+      invites: new Map(),
+      wasActive: false,
+    };
+  }
+
+  /**
+   * Cria uma partida pública com os jogadores da fila (e bots completando a
+   * mesa) e já a inicia.
+   */
+  public createMatch(members: MatchMember[], bots: number): string | undefined {
+    const sockets = members
+      .map((m) => ({ m, s: this.io.sockets.sockets.get(m.socketId) }))
+      .filter((x): x is { m: MatchMember; s: Socket } => !!x.s?.connected);
+    if (sockets.length === 0) return undefined;
+    const roomId = this.newRoomId();
+    const engine = new CoupEngine(roomId);
+    const entry = this.newEntry(engine, 'Partida pública', sockets[0]!.s.id);
+    entry.matchmade = true;
+    this.rooms.set(roomId, entry);
+    const taken = new Set<string>();
+    for (const { m, s } of sockets) {
+      this.leaveCurrentRoom(s);
+      let name = m.name || 'Jogador';
+      for (let i = 2; taken.has(name); i++) name = `${m.name} ${i}`;
+      taken.add(name);
+      this.addHuman(entry, roomId, s, name);
+      s.emit('match_found', { roomId });
+    }
+    for (let i = 0; i < bots && engine.getState().players.length < MAX_PLAYERS; i++) this.addBotTo(entry);
+    if (engine.getState().players.length < 2) this.addBotTo(entry);
+    engine.startGame();
+    this.afterMutation(roomId);
+    return roomId;
+  }
+
+  /**
+   * Convida uma conta para a sala (ainda no lobby) do socket. O convite deixa
+   * entrar mesmo em sala com senha.
+   */
+  public invite(fromSocketId: string, userId: string) {
+    const roomId = this.socketToRoom.get(fromSocketId);
+    const entry = roomId ? this.rooms.get(roomId) : undefined;
+    if (!roomId || !entry) throw new AppError('NOT_IN_ROOM', 'Entre numa sala para convidar.');
+    if (entry.engine.isGameStarted()) throw new AppError('IN_GAME', 'A partida já começou.');
+    if (entry.engine.getState().players.length >= MAX_PLAYERS) throw new AppError('FULL', 'Sala cheia.');
+    const expiresAt = Date.now() + INVITE_TTL_MS;
+    entry.invites.set(userId, expiresAt);
+    return { roomId, roomName: entry.displayName, expiresAt };
+  }
+
+  private addBotTo(entry: RoomEntry) {
+    const st = entry.engine.getState();
+    const taken = new Set(st.players.map((p) => p.name));
+    const name = BOT_NAMES.find((n) => !taken.has(n)) ?? `Bot ${st.players.length + 1}`;
+    const personality = PERSONALITIES[Math.floor(Math.random() * PERSONALITIES.length)];
+    entry.engine.addPlayer(`bot_${Math.random().toString(36).substring(2, 9)}`, name, true, personality);
   }
 
   public handleConnection(rawSocket: Socket) {
@@ -92,37 +252,34 @@ export class RoomManager {
           }
         }),
     } as unknown as Socket;
-    socket.on('create_room', (data: { displayName?: string; roomName?: string; playerName?: string; password?: string }) => {
-      const dn = (data?.displayName ?? data?.roomName ?? '').trim();
-      const pn = (data?.playerName ?? '').trim();
-      if (!dn || !pn) {
-        socket.emit('room_error', { code: 'INVALID', message: 'Nome da sala e do jogador são obrigatórios.' });
-        return;
-      }
-      this.leaveCurrentRoom(socket);
-      let roomId = '';
-      do {
-        roomId = Math.random().toString(36).substring(2, 7).toUpperCase();
-      } while (this.rooms.has(roomId));
-      const engine = new CoupEngine(roomId);
-      engine.addPlayer(socket.id, pn.slice(0, 24));
-      const pw = data.password?.trim();
-      this.rooms.set(roomId, {
-        engine,
-        displayName: dn.slice(0, 48),
-        hostId: socket.id,
-        voice: new Map(),
-        ...(pw ? { passwordPlain: pw.slice(0, 64) } : {}),
-      });
-      socket.join(roomId);
-      this.socketToRoom.set(socket.id, roomId);
-      socket.emit('room_created', { roomId });
-      this.broadcast(roomId);
-    });
+    socket.on(
+      'create_room',
+      (data: { displayName?: string; roomName?: string; playerName?: string; password?: string; private?: boolean }) => {
+        const dnRaw = data?.displayName ?? data?.roomName;
+        const dn = typeof dnRaw === 'string' ? cleanText(dnRaw, 48) : '';
+        const pn = this.nameFor(socket.id, data?.playerName);
+        if (!dn || !pn) {
+          socket.emit('room_error', { code: 'INVALID', message: 'Nome da sala e do jogador são obrigatórios.' });
+          return;
+        }
+        this.leaveCurrentRoom(socket);
+        const roomId = this.newRoomId();
+        const engine = new CoupEngine(roomId);
+        const pw = typeof data.password === 'string' ? data.password.trim() : '';
+        const entry = this.newEntry(engine, dn, socket.id);
+        entry.isPrivate = data.private === true || !!pw;
+        if (pw) entry.passwordPlain = pw.slice(0, 64);
+        this.rooms.set(roomId, entry);
+        this.addHuman(entry, roomId, socket, pn);
+        socket.emit('room_created', { roomId, private: entry.isPrivate });
+        this.broadcast(roomId);
+        this.presence(entry);
+      },
+    );
 
     socket.on('join_room', (data: { roomId?: string; playerName?: string; password?: string }) => {
       const rid = normRoomId(data?.roomId);
-      const pn = (data?.playerName ?? '').trim();
+      const pn = this.nameFor(socket.id, data?.playerName);
       if (!rid || !pn) {
         socket.emit('room_error', { code: 'INVALID', message: 'Código da sala e nome do jogador são obrigatórios.' });
         return;
@@ -130,6 +287,10 @@ export class RoomManager {
       const entry = this.rooms.get(rid);
       if (!entry) {
         socket.emit('room_error', { code: 'NOT_FOUND', message: 'Sala inexistente.' });
+        return;
+      }
+      if (this.socketToRoom.get(socket.id) === rid) {
+        this.broadcast(rid);
         return;
       }
       if (entry.engine.isGameStarted()) {
@@ -140,28 +301,29 @@ export class RoomManager {
         socket.emit('room_error', { code: 'FULL', message: 'Sala cheia (máx. 6 jogadores).' });
         return;
       }
-      if (entry.passwordPlain && entry.passwordPlain !== (data.password?.trim() ?? '')) {
+      const acc = this.hooks.accountOf(socket.id);
+      const invited = !!acc && (entry.invites.get(acc.userId) ?? 0) > Date.now();
+      const pw = typeof data.password === 'string' ? data.password.trim() : '';
+      if (entry.passwordPlain && !invited && entry.passwordPlain !== pw) {
         socket.emit('room_error', { code: 'BAD_PASSWORD', message: 'Senha incorreta.' });
         return;
       }
       this.leaveCurrentRoom(socket);
-      entry.engine.addPlayer(socket.id, pn.slice(0, 24));
-      socket.join(rid);
-      this.socketToRoom.set(socket.id, rid);
+      const taken = new Set(entry.engine.getState().players.map((p) => p.name));
+      let name = pn;
+      for (let i = 2; taken.has(name); i++) name = `${pn} ${i}`;
+      this.addHuman(entry, rid, socket, name);
       this.broadcast(rid);
       this.broadcastVoice(rid);
+      this.presence(entry);
     });
 
     socket.on('add_bot', (data: unknown) => {
       const rid = roomIdOf(data);
       const entry = this.rooms.get(rid);
       if (!entry || entry.hostId !== socket.id || entry.engine.isGameStarted()) return;
-      const st = entry.engine.getState();
-      if (st.players.length >= MAX_PLAYERS) return;
-      const taken = new Set(st.players.map((p) => p.name));
-      const name = BOT_NAMES.find((n) => !taken.has(n)) ?? `Bot ${st.players.length + 1}`;
-      const personality = PERSONALITIES[Math.floor(Math.random() * PERSONALITIES.length)];
-      entry.engine.addPlayer(`bot_${Math.random().toString(36).substring(2, 9)}`, name, true, personality);
+      if (entry.engine.getState().players.length >= MAX_PLAYERS) return;
+      this.addBotTo(entry);
       this.broadcast(rid);
     });
 
@@ -193,14 +355,14 @@ export class RoomManager {
     });
 
     socket.on('game_action', (data: { roomId: string; action: Action }) => {
-      this.mutate(data, (e) => {
+      this.mutate(socket.id, data, (e) => {
         if (!data?.action || typeof data.action !== 'object') return;
         e.handleAction(socket.id, { ...data.action, source: socket.id });
       });
     });
 
     socket.on('game_response', (data: { roomId: string; response: unknown; role?: Role }) => {
-      this.mutate(data, (e) => {
+      this.mutate(socket.id, data, (e) => {
         const r = data?.response;
         // Compatível com clientes antigos que mandavam { type, role }.
         const type = typeof r === 'string' ? r : (r as { type?: string })?.type;
@@ -212,16 +374,24 @@ export class RoomManager {
     });
 
     socket.on('select_influence', (data: { roomId: string; role: Role }) => {
-      this.mutate(data, (e) => e.handleFlip(socket.id, data.role));
+      this.mutate(socket.id, data, (e) => e.handleFlip(socket.id, data.role));
     });
 
     socket.on('confirm_exchange', (data: { roomId: string; keptRoles: Role[] }) => {
-      this.mutate(data, (e) => {
+      this.mutate(socket.id, data, (e) => {
         if (Array.isArray(data?.keptRoles)) e.handleExchangeChoice(socket.id, data.keptRoles);
       });
     });
 
     socket.on('leave_room', () => this.leaveCurrentRoom(socket));
+
+    // Reenvia o estado da sala atual só para este socket (cliente que
+    // passou a escutar depois de a fila já o ter colocado numa partida).
+    socket.on('room_sync', () => {
+      const roomId = this.socketToRoom.get(socket.id);
+      const entry = roomId ? this.rooms.get(roomId) : undefined;
+      if (entry) socket.emit('room_update', this.viewFor(entry, socket.id));
+    });
 
     // Chat de voz: o servidor só repassa a sinalização WebRTC entre membros
     // da mesma sala; o áudio vai direto entre os navegadores/aparelhos.
@@ -274,9 +444,22 @@ export class RoomManager {
 
   public handleDisconnect(socket: Socket) {
     this.leaveCurrentRoom(socket);
+    this.recent.delete(socket.id);
   }
 
-  private leaveCurrentRoom(socket: Socket) {
+  /** Sai da sala atual (ex.: ao entrar na fila de partida). */
+  public leave(socket: Pick<Socket, 'id' | 'leave'>) {
+    this.leaveCurrentRoom(socket);
+  }
+
+  /** Esquece a conta do socket nas salas (logout no meio do lobby). */
+  public forgetAccount(socketId: string) {
+    const roomId = this.socketToRoom.get(socketId);
+    const entry = roomId ? this.rooms.get(roomId) : undefined;
+    entry?.accounts.delete(socketId);
+  }
+
+  private leaveCurrentRoom(socket: Pick<Socket, 'id' | 'leave'>) {
     const roomId = this.socketToRoom.get(socket.id);
     if (!roomId) return;
     this.leaveVoice(socket.id);
@@ -286,20 +469,25 @@ export class RoomManager {
     if (!entry) return;
     // No lobby sai da lista; na partida, abandona (perde as influências).
     entry.engine.forfeitPlayer(socket.id);
+    if (!entry.engine.isGameStarted()) entry.accounts.delete(socket.id);
+    this.hooks.onPresence([socket.id]);
     const humans = entry.engine
       .getState()
       .players.filter((p) => !p.isBot && p.isConnected);
     if (humans.length === 0) {
       this.clearTimer(entry);
       this.rooms.delete(roomId);
+      this.hooks.onRoomsChanged();
       return;
     }
     if (entry.hostId === socket.id) entry.hostId = humans[0]!.id;
     this.afterMutation(roomId);
   }
 
-  private mutate(data: unknown, fn: (engine: CoupEngine) => void) {
+  private mutate(socketId: string, data: unknown, fn: (engine: CoupEngine) => void) {
     const rid = roomIdOf(data);
+    // Só joga quem está de fato na sala.
+    if (this.socketToRoom.get(socketId) !== rid) return;
     const entry = this.rooms.get(rid);
     if (!entry || !entry.engine.isGameStarted()) return;
     fn(entry.engine);
@@ -311,11 +499,24 @@ export class RoomManager {
     delete entry.timer;
   }
 
+  /** Avisa os amigos dos humanos da sala quando a partida começa ou acaba. */
+  private presence(entry: RoomEntry, force = true) {
+    const active = isActive(entry);
+    if (!force && active === entry.wasActive) return;
+    entry.wasActive = active;
+    const ids = entry.engine
+      .getState()
+      .players.filter((p) => !p.isBot && p.isConnected)
+      .map((p) => p.id);
+    this.hooks.onPresence(ids);
+  }
+
   /** Transmite o estado e agenda a próxima jogada de bot (ou o relógio do humano). */
   private afterMutation(roomId: string) {
     const entry = this.rooms.get(roomId);
     if (!entry) return;
     this.broadcast(roomId);
+    this.presence(entry, false);
     this.clearTimer(entry);
     if (!entry.engine.isGameStarted()) return;
 
@@ -338,7 +539,7 @@ export class RoomManager {
         }
         this.afterMutation(roomId);
       },
-      actor.isBot ? BOT_DELAY_MS : HUMAN_TIMEOUT_MS,
+      actor.isBot ? this.botDelayMs : HUMAN_TIMEOUT_MS,
     );
   }
 
@@ -390,6 +591,7 @@ export class RoomManager {
       ...(exchangingCards && exchanger === viewerId ? { exchangingCards } : {}),
       players: st.players.map((p) => ({
         ...p,
+        ...(entry.accounts.has(p.id) ? { userId: entry.accounts.get(p.id) } : {}),
         cards: p.cards.map((c) =>
           reveal || c.isFlipped || p.id === viewerId ? c : { role: null, isFlipped: false },
         ),
@@ -399,16 +601,43 @@ export class RoomManager {
         hasPassword: !!entry.passwordPlain,
         hostId: entry.hostId,
         started: entry.engine.isGameStarted(),
+        isPrivate: entry.isPrivate,
+        matchmade: entry.matchmade,
       },
     };
+  }
+
+  /** Lembra, para cada humano da sala, quem estava na mesa com ele. */
+  private remember(roomId: string, entry: RoomEntry) {
+    const players = entry.engine.getState().players.filter((p) => !p.isBot);
+    const now = Date.now();
+    for (const viewer of players) {
+      if (!viewer.isConnected) continue;
+      let map = this.recent.get(viewer.id);
+      if (!map) this.recent.set(viewer.id, (map = new Map()));
+      for (const p of players) {
+        if (p.id === viewer.id) continue;
+        const userId = entry.accounts.get(p.id);
+        map.delete(p.id);
+        map.set(p.id, { playerId: p.id, name: p.name, roomId, at: now, ...(userId ? { userId } : {}) });
+      }
+      while (map.size > RECENT_LIMIT) map.delete(map.keys().next().value!);
+    }
   }
 
   private broadcast(roomId: string) {
     const entry = this.rooms.get(roomId);
     if (!entry) return;
+    this.remember(roomId, entry);
     for (const p of entry.engine.getState().players) {
       if (p.isBot || !p.isConnected) continue;
       this.io.to(p.id).emit('room_update', this.viewFor(entry, p.id));
+    }
+    if (!entry.engine.isGameStarted() || entry.engine.getState().players.length === 0) {
+      this.hooks.onRoomsChanged();
+    } else if (!entry.wasActive) {
+      // Acabou de começar: sai da lista.
+      this.hooks.onRoomsChanged();
     }
   }
 }

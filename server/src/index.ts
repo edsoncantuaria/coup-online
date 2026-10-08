@@ -1,39 +1,15 @@
-import express from 'express';
-import { createServer } from 'http';
-import { Server } from 'socket.io';
-import cors from 'cors';
-import { RoomManager } from './socket/RoomManager.js';
+import { startServer } from './server.js';
 
-const app = express();
-app.use(cors());
+const server = await startServer();
+console.log(`Server running on port ${server.port} (dados em ${server.dataDir})`);
 
-const httpServer = createServer(app);
-const io = new Server(httpServer, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
-  }
-});
-
-const roomManager = new RoomManager(io);
-
-app.get('/api/ping', (_req, res) => {
-  res.json({ ok: true, name: 'coup-online' });
-});
-
-app.get('/api/rooms', (_req, res) => {
-  res.json({ rooms: roomManager.getLobbySummaries() });
-});
-
-io.on('connection', (socket) => {
-  roomManager.handleConnection(socket);
-
-  socket.on('disconnect', () => {
-    roomManager.handleDisconnect(socket);
+// Grava contas e denúncias pendentes antes de sair.
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, () => {
+    try {
+      server.flush();
+    } finally {
+      process.exit(0);
+    }
   });
-});
-
-const PORT = process.env.PORT || 3000;
-httpServer.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+}
