@@ -2,11 +2,17 @@
 // Rode com `npm test` (compila e executa com node:test).
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { io as connectClient } from 'socket.io-client';
 import { startServer } from '../dist/server.js';
+
+// Senhas de teste geradas na hora (nada fixo no código).
+const PW = randomBytes(6).toString('hex');
+const PW_OTHER = randomBytes(6).toString('hex');
+const PW_WRONG = `${PW}-x`;
 
 let server;
 let base;
@@ -83,26 +89,26 @@ async function post(p, body, token) {
 }
 
 async function account(name) {
-  const r = await post('/api/auth/register', { username: name, password: 'segredo123' });
+  const r = await post('/api/auth/register', { username: name, password: PW });
   assert.equal(r.status, 201, JSON.stringify(r.body));
   return r.body;
 }
 
 test('cria conta, entra, sessão por token e nada sensível vaza', async () => {
-  const reg = await post('/api/auth/register', { username: 'Alice', password: 'segredo123' });
+  const reg = await post('/api/auth/register', { username: 'Alice', password: PW });
   assert.equal(reg.status, 201);
   assert.equal(reg.body.user.username, 'Alice');
   assert.ok(reg.body.token.length >= 40);
   assert.deepEqual(Object.keys(reg.body.user).sort(), ['id', 'username']);
 
-  assert.equal((await post('/api/auth/register', { username: 'alice', password: 'outra-senha' })).status, 409);
-  assert.equal((await post('/api/auth/register', { username: 'x', password: 'segredo123' })).body.code, 'INVALID_USERNAME');
+  assert.equal((await post('/api/auth/register', { username: 'alice', password: PW_OTHER })).status, 409);
+  assert.equal((await post('/api/auth/register', { username: 'x', password: PW })).body.code, 'INVALID_USERNAME');
   assert.equal((await post('/api/auth/register', { username: 'Bruno', password: '123' })).body.code, 'INVALID_PASSWORD');
-  assert.equal((await post('/api/auth/register', { username: { $ne: 1 }, password: 'segredo123' })).status, 400);
+  assert.equal((await post('/api/auth/register', { username: { $ne: 1 }, password: PW })).status, 400);
 
-  const bad = await post('/api/auth/login', { username: 'alice', password: 'errada!!' });
+  const bad = await post('/api/auth/login', { username: 'alice', password: PW_WRONG });
   assert.equal(bad.status, 401);
-  const good = await post('/api/auth/login', { username: 'ALICE', password: 'segredo123' });
+  const good = await post('/api/auth/login', { username: 'ALICE', password: PW });
   assert.equal(good.status, 200);
   assert.equal(good.body.user.id, reg.body.user.id);
 
@@ -111,7 +117,7 @@ test('cria conta, entra, sessão por token e nada sensível vaza', async () => {
 
   // Pelo socket: login, sessão por token e logout.
   const s = await client();
-  const viaSocket = await ack(s, 'account_login', { username: 'alice', password: 'segredo123' });
+  const viaSocket = await ack(s, 'account_login', { username: 'alice', password: PW });
   assert.equal(viaSocket.ok, true);
   const s2 = await client();
   const authed = await ack(s2, 'account_auth', { token: viaSocket.token });
@@ -127,7 +133,7 @@ test('cria conta, entra, sessão por token e nada sensível vaza', async () => {
   // Em disco: hash scrypt, nunca a senha nem o token em claro.
   server.flush();
   const raw = fs.readFileSync(path.join(dataDir, 'accounts.json'), 'utf8');
-  assert.ok(!raw.includes('segredo123'));
+  assert.ok(!raw.includes(PW));
   assert.ok(!raw.includes(good.body.token));
   const doc = JSON.parse(raw);
   assert.match(doc.users.find((u) => u.username === 'Alice').passwordHash, /^scrypt:16384:8:1:[0-9a-f]{32}:[0-9a-f]{128}$/);
