@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -6,14 +8,19 @@ import '../../engine/labels.dart';
 import '../../engine/models.dart';
 import '../../game/game_controller.dart';
 import '../theme.dart';
-import 'arena.dart';
+import 'action_sheet.dart';
 import 'common.dart';
 import 'influence_card.dart';
 
-/// Painel do jogador local: mão, moedas, relógio e a decisão do momento.
+/// Painel do jogador local, enxuto: identidade e moedas, a mão e um botão
+/// "Agir" que abre as ações. Decisões de resposta (desafiar, bloquear,
+/// trocar) sobem numa faixa curta só quando é a sua vez de responder.
 class MyPanel extends StatefulWidget {
-  const MyPanel({super.key, required this.controller});
+  const MyPanel({super.key, required this.controller, this.trailing});
   final GameController controller;
+
+  /// Controle extra ao lado do nome (ex.: microfone do chat de voz).
+  final Widget? trailing;
 
   @override
   State<MyPanel> createState() => _MyPanelState();
@@ -39,136 +46,246 @@ class _MyPanelState extends State<MyPanel> {
 
     final decide = c.isMyDecision;
     final losing = decide && s.phase == Phase.losingInfluence;
-    final exchanging = decide && s.phase == Phase.exchanging;
+    final myTurn = decide && s.phase == Phase.action;
     final height = MediaQuery.sizeOf(context).height;
-    final cardWidth = (height * 0.095).clamp(58.0, 92.0);
+    final cardWidth = (height * 0.085).clamp(54.0, 84.0);
+    final prompt = _prompt(s, me);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: CoupColors.secondary,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-        border: Border(
-          top: BorderSide(
-            color: decide ? CoupColors.gold : CoupColors.border,
-            width: decide ? 1.5 : 1,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GenSwitcher(
+          switchKey: prompt?.key,
+          duration: const Duration(milliseconds: 280),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, anim) => FadeTransition(
+            opacity: anim,
+            child: SlideTransition(
+              position: Tween(
+                begin: const Offset(0, 0.25),
+                end: Offset.zero,
+              ).animate(anim),
+              child: SizeTransition(
+                sizeFactor: anim,
+                alignment: Alignment.bottomCenter,
+                child: child,
+              ),
+            ),
           ),
+          child: prompt?.child ?? const SizedBox(width: double.infinity),
         ),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black54,
-            blurRadius: 16,
-            offset: Offset(0, -4),
+        Container(
+          decoration: BoxDecoration(
+            color: CoupColors.secondary,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+            border: Border(
+              top: BorderSide(
+                color: decide ? CoupColors.gold : CoupColors.border,
+                width: decide ? 1.5 : 1,
+              ),
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black54,
+                blurRadius: 16,
+                offset: Offset(0, -4),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _TimerBar(controller: c),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      PlayerAvatar(
-                        player: me,
-                        size: 34,
-                        ringColor: s.currentPlayer?.id == me.id
-                            ? CoupColors.gold
-                            : null,
+                  Expanded(child: _identity(s, me)),
+                  _hand(me, cardWidth, losing),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: _ActButton(
+                        active: myTurn,
+                        enabled: me.isAlive && s.phase != Phase.gameOver,
+                        timer: decide ? c.turnTimer : null,
+                        total: c.turnTimerTotal,
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          showActionSheet(context, c);
+                        },
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          me.name,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                      if (c.turnTimer != null) ...[
-                        Icon(
-                          Icons.timer_outlined,
-                          size: 16,
-                          color: c.turnTimer! <= 10
-                              ? CoupColors.error
-                              : CoupColors.textSecondary,
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          '${c.turnTimer}s',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: c.turnTimer! <= 10
-                                ? CoupColors.error
-                                : CoupColors.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                      ],
-                      CoinBadge(coins: me.coins, large: true),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  if (exchanging)
-                    _exchangePicker(s, me)
-                  else
-                    _hand(me, cardWidth, losing),
-                  const SizedBox(height: 12),
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 200),
-                    alignment: Alignment.topCenter,
-                    child: _decision(s, me),
+                    ),
                   ),
                 ],
               ),
             ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
+  Widget _identity(GameState s, Player me) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Row(
+        children: [
+          PlayerAvatar(
+            player: me,
+            size: 30,
+            ringColor: s.currentPlayer?.id == me.id ? CoupColors.gold : null,
+          ),
+          if (widget.trailing != null) ...[
+            const SizedBox(width: 4),
+            widget.trailing!,
+          ],
+        ],
+      ),
+      const SizedBox(height: 4),
+      Text(
+        me.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+      ),
+      const SizedBox(height: 6),
+      CoinBadge(coins: me.coins, large: true),
+    ],
+  );
+
   Widget _hand(Player me, double width, bool losing) => Row(
-    mainAxisAlignment: MainAxisAlignment.center,
+    mainAxisSize: MainAxisSize.min,
     children: [
       for (final card in me.cards)
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: InfluenceCard(
-            role: card.role,
-            flipped: card.isFlipped,
-            width: width,
-            highlight: losing && !card.isFlipped,
-            onTap: losing && !card.isFlipped
-                ? () => _confirmLoss(card.role)
-                : null,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: FlipSwitcher(
+            flipKey: '${card.role}-${card.isFlipped}',
+            child: InfluenceCard(
+              role: card.role,
+              flipped: card.isFlipped,
+              width: width,
+              highlight: losing && !card.isFlipped,
+              onTap: losing && !card.isFlipped
+                  ? () {
+                      HapticFeedback.mediumImpact();
+                      c.selectInfluence(card.role);
+                    }
+                  : null,
+            ),
           ),
         ),
     ],
   );
 
-  Future<void> _confirmLoss(Role role) async {
-    HapticFeedback.mediumImpact();
-    c.selectInfluence(role);
+  /// A faixa que sobe acima do painel, ou null quando não há nada a decidir.
+  ({Key key, Widget child})? _prompt(GameState s, Player me) {
+    if (s.phase == Phase.gameOver || !c.isMyDecision) return null;
+    final timer = c.turnTimer;
+    final k = '${s.phase.wire}-${s.turnIndex}-${s.pendingBlock?.blockerId}';
+
+    switch (s.phase) {
+      case Phase.challenge:
+        final a = s.currentAction!;
+        final role = CoupEngine.requiredRole(a.type)!;
+        final actor = s.playerById(a.source)?.name ?? '?';
+        return (
+          key: ValueKey(k),
+          child: _PromptBar(
+            role: role,
+            timer: timer,
+            title: a.target == me.id
+                ? '$actor: ${actionLabel(a.type)} em você'
+                : '$actor diz ter ${roleLabel(role)}',
+            subtitle: 'Desafie se achar que é blefe.',
+            buttons: [
+              _Btn(
+                'Desafiar',
+                CoupColors.red,
+                () => c.sendResponse(ResponseType.challenge),
+              ),
+              _Btn('Acreditar', null, () => c.sendResponse(ResponseType.pass)),
+            ],
+          ),
+        );
+      case Phase.block:
+        final a = s.currentAction!;
+        final pb = s.pendingBlock;
+        if (pb != null) {
+          final blocker = s.playerById(pb.blockerId)?.name ?? '?';
+          return (
+            key: ValueKey(k),
+            child: _PromptBar(
+              role: pb.role,
+              timer: timer,
+              title: '$blocker bloqueia com ${roleLabel(pb.role)}',
+              subtitle: 'Desafie se achar que é blefe.',
+              buttons: [
+                _Btn(
+                  'Desafiar',
+                  CoupColors.red,
+                  () => c.sendResponse(ResponseType.challenge),
+                ),
+                _Btn('Aceitar', null, () => c.sendResponse(ResponseType.pass)),
+              ],
+            ),
+          );
+        }
+        final actor = s.playerById(a.source)?.name ?? '?';
+        final roles = CoupEngine.blockingRoles(a.type);
+        return (
+          key: ValueKey(k),
+          child: _PromptBar(
+            timer: timer,
+            title: switch (a.type) {
+              ActionType.assassinate => '$actor quer assassinar você',
+              ActionType.steal => '$actor quer extorquir você',
+              _ => '$actor pede Ajuda Externa',
+            },
+            subtitle: 'Bloquear vale mesmo sem ter a carta.',
+            buttons: [
+              for (final r in roles)
+                _Btn(
+                  roleLabel(r),
+                  me.aliveRoles.contains(r)
+                      ? CoupColors.info
+                      : CoupColors.bluff,
+                  () => c.sendResponse(ResponseType.block, r),
+                  icon: Icons.shield,
+                ),
+              _Btn('Permitir', null, () => c.sendResponse(ResponseType.pass)),
+            ],
+          ),
+        );
+      case Phase.losingInfluence:
+        return (
+          key: ValueKey(k),
+          child: _PromptBar(
+            timer: timer,
+            accent: CoupColors.error,
+            title: 'Você perde uma influência',
+            subtitle: 'Toque na carta que vai revelar.',
+            buttons: const [],
+          ),
+        );
+      case Phase.exchanging:
+        return (key: ValueKey(k), child: _exchange(s, me, timer));
+      default:
+        return null;
+    }
   }
 
-  Widget _exchangePicker(GameState s, Player me) {
+  Widget _exchange(GameState s, Player me, int? timer) {
     final pool = [...me.aliveRoles, ...?s.exchangingCards];
     final need = me.influence;
-    return Column(
-      children: [
-        Text(
-          'Toque em $need carta${need > 1 ? 's' : ''} para manter. '
-          'As outras voltam para a Corte.',
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: CoupColors.textSecondary, fontSize: 12),
-        ),
-        const SizedBox(height: 10),
-        Wrap(
+    return StatefulBuilder(
+      builder: (context, setLocal) => _PromptBar(
+        timer: timer,
+        title: 'Embaixador: escolha $need para manter',
+        subtitle: 'As outras voltam para a Corte.',
+        body: Wrap(
           alignment: WrapAlignment.center,
           spacing: 8,
           runSpacing: 8,
@@ -179,9 +296,10 @@ class _MyPanelState extends State<MyPanel> {
                 children: [
                   InfluenceCard(
                     role: pool[i],
-                    width: 64,
+                    width: 54,
                     selected: _pick.contains(i),
-                    onTap: () => setState(() {
+                    onTap: () => setLocal(() {
+                      HapticFeedback.selectionClick();
                       if (_pick.contains(i)) {
                         _pick.remove(i);
                       } else if (_pick.length < need) {
@@ -193,7 +311,7 @@ class _MyPanelState extends State<MyPanel> {
                       }
                     }),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
                     i < me.influence ? 'sua' : 'nova',
                     style: const TextStyle(
@@ -205,560 +323,363 @@ class _MyPanelState extends State<MyPanel> {
               ),
           ],
         ),
-      ],
-    );
-  }
-
-  Widget _decision(GameState s, Player me) {
-    if (s.phase == Phase.gameOver) return const SizedBox.shrink();
-    if (!me.isAlive) {
-      return const _Note(
-        icon: Icons.visibility_outlined,
-        text: 'Você foi eliminado. Assista ao desfecho da corte.',
-      );
-    }
-    if (!c.isMyDecision) {
-      if (c.busy) return const SizedBox(height: 4);
-      return _Note(
-        icon: Icons.hourglass_empty,
-        text: describeWaiting(s, c.myId),
-      );
-    }
-
-    switch (s.phase) {
-      case Phase.action:
-        return _ActionGrid(controller: c, state: s, me: me);
-      case Phase.challenge:
-        final a = s.currentAction!;
-        final role = CoupEngine.requiredRole(a.type)!;
-        final actor = s.playerById(a.source)?.name ?? '?';
-        final targetsMe = a.target == me.id;
-        return _DecisionCard(
-          title: '$actor diz ter ${roleLabel(role)}',
-          body: targetsMe
-              ? '${actionLabel(a.type)} contra você. Se desafiar e '
-                    '$actor tiver a carta, você perde uma influência.'
-              : 'Se desafiar e $actor tiver a carta, você perde uma '
-                    'influência. Se for blefe, quem perde é $actor.',
-          role: role,
-          buttons: [
-            _Btn(
-              'Desafiar',
-              Icons.gavel,
-              CoupColors.red,
-              () => c.sendResponse(ResponseType.challenge),
-            ),
-            _Btn(
-              'Acreditar',
-              Icons.check,
-              null,
-              () => c.sendResponse(ResponseType.pass),
-            ),
-          ],
-        );
-      case Phase.block:
-        final a = s.currentAction!;
-        final pb = s.pendingBlock;
-        if (pb != null) {
-          final blocker = s.playerById(pb.blockerId)?.name ?? '?';
-          return _DecisionCard(
-            title: '$blocker bloqueia com ${roleLabel(pb.role)}',
-            body:
-                'Se desafiar e $blocker tiver a carta, você perde uma '
-                'influência. Se for blefe, o bloqueio cai.',
-            role: pb.role,
-            buttons: [
-              _Btn(
-                'Desafiar',
-                Icons.gavel,
-                CoupColors.red,
-                () => c.sendResponse(ResponseType.challenge),
-              ),
-              _Btn(
-                'Aceitar',
-                Icons.check,
-                null,
-                () => c.sendResponse(ResponseType.pass),
-              ),
-            ],
-          );
-        }
-        final actor = s.playerById(a.source)?.name ?? '?';
-        final roles = CoupEngine.blockingRoles(a.type);
-        return _DecisionCard(
-          title: switch (a.type) {
-            ActionType.assassinate => '$actor quer assassinar você',
-            ActionType.steal => '$actor quer extorquir você',
-            _ => '$actor pede Ajuda Externa',
-          },
-          body:
-              'Você pode bloquear dizendo ter '
-              '${roles.map(roleLabel).join(' ou ')}, mesmo sem ter.',
-          buttons: [
-            for (final r in roles)
-              _Btn(
-                'Bloquear · ${roleLabel(r)}',
-                Icons.shield,
-                me.aliveRoles.contains(r) ? CoupColors.info : CoupColors.bluff,
-                () => c.sendResponse(ResponseType.block, r),
-              ),
-            _Btn(
-              'Permitir',
-              Icons.check,
-              null,
-              () => c.sendResponse(ResponseType.pass),
-            ),
-          ],
-        );
-      case Phase.losingInfluence:
-        return const _Note(
-          icon: Icons.touch_app,
-          text: 'Toque na carta que você vai revelar e perder.',
-          color: CoupColors.error,
-        );
-      case Phase.exchanging:
-        final need = me.influence;
-        return SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: _pick.length == need
-                ? () {
-                    final pool = [...me.aliveRoles, ...?s.exchangingCards];
-                    c.confirmExchange(_pick.map((i) => pool[i]).toList());
-                  }
+        buttons: [
+          _Btn(
+            'Manter ${_pick.length}/$need',
+            CoupColors.gold,
+            _pick.length == need
+                ? () => c.confirmExchange(_pick.map((i) => pool[i]).toList())
                 : null,
-            icon: const Icon(Icons.check),
-            label: Text('Manter ${_pick.length}/$need'),
           ),
-        );
-      default:
-        return const SizedBox.shrink();
-    }
+        ],
+      ),
+    );
   }
 }
 
-// --------------------------------------------------------------- timer bar
+// ------------------------------------------------------------- act button
 
-class _TimerBar extends StatelessWidget {
-  const _TimerBar({required this.controller});
-  final GameController controller;
+class _ActButton extends StatefulWidget {
+  const _ActButton({
+    required this.active,
+    required this.enabled,
+    required this.timer,
+    required this.total,
+    required this.onTap,
+  });
+
+  final bool active;
+  final bool enabled;
+  final int? timer;
+  final int total;
+  final VoidCallback onTap;
+
+  @override
+  State<_ActButton> createState() => _ActButtonState();
+}
+
+class _ActButtonState extends State<_ActButton>
+    with SingleTickerProviderStateMixin {
+  late final _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(_ActButton old) {
+    super.didUpdateWidget(old);
+    _sync();
+  }
+
+  void _sync() {
+    if (widget.active && !_pulse.isAnimating) {
+      _pulse.repeat();
+    } else if (!widget.active && _pulse.isAnimating) {
+      _pulse
+        ..stop()
+        ..value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final t = controller.turnTimer;
-    final total = controller.turnTimerTotal;
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+    const size = 66.0;
+    final t = widget.timer;
+    final urgent = t != null && t <= 10;
+    final ringColor = urgent ? CoupColors.error : CoupColors.goldHigh;
+    return Semantics(
+      button: true,
+      label: widget.active ? 'Agir' : 'Ações',
       child: SizedBox(
-        height: 3,
-        child: t == null || total <= 0
-            ? const SizedBox.shrink()
-            : TweenAnimationBuilder<double>(
-                tween: Tween(end: t / total),
-                duration: const Duration(milliseconds: 950),
-                builder: (_, v, _) => LinearProgressIndicator(
-                  value: v,
-                  backgroundColor: Colors.transparent,
-                  color: t <= 10 ? CoupColors.error : CoupColors.gold,
+        width: size + 16,
+        height: size + 16,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Halo pulsante quando é a sua vez.
+            AnimatedBuilder(
+              animation: _pulse,
+              builder: (_, _) {
+                if (!widget.active) return const SizedBox.shrink();
+                final v = Curves.easeOut.transform(_pulse.value);
+                return Container(
+                  width: size + 16 * v,
+                  height: size + 16 * v,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: CoupColors.gold.withValues(alpha: 0.35 * (1 - v)),
+                  ),
+                );
+              },
+            ),
+            if (t != null && widget.total > 0)
+              SizedBox(
+                width: size + 6,
+                height: size + 6,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(end: t / widget.total),
+                  duration: const Duration(milliseconds: 950),
+                  builder: (_, v, _) => CustomPaint(
+                    painter: _RingPainter(value: v, color: ringColor),
+                  ),
                 ),
               ),
-      ),
-    );
-  }
-}
-
-// ------------------------------------------------------------- action grid
-
-class _ActionGrid extends StatelessWidget {
-  const _ActionGrid({
-    required this.controller,
-    required this.state,
-    required this.me,
-  });
-
-  final GameController controller;
-  final GameState state;
-  final Player me;
-
-  String? _whyNot(ActionType t) {
-    if (me.coins >= 10 && t != ActionType.coup) return 'Golpe obrigatório';
-    if (t == ActionType.coup && me.coins < 7) return 'Precisa de 7';
-    if (t == ActionType.assassinate && me.coins < 3) return 'Precisa de 3';
-    if (CoupEngine.actionNeedsTarget(t) && _targets(t).isEmpty) {
-      return 'Sem alvo';
-    }
-    return null;
-  }
-
-  List<Player> _targets(ActionType t) => state.players
-      .where(
-        (p) =>
-            p.id != me.id &&
-            p.isAlive &&
-            (t != ActionType.steal || p.coins > 0),
-      )
-      .toList();
-
-  Future<void> _go(BuildContext context, ActionType t) async {
-    HapticFeedback.selectionClick();
-    if (!CoupEngine.actionNeedsTarget(t)) {
-      controller.sendAction(GameAction(type: t, source: me.id));
-      return;
-    }
-    final targets = _targets(t);
-    final target = targets.length == 1
-        ? targets.first
-        : await showModalBottomSheet<Player>(
-            context: context,
-            backgroundColor: CoupColors.secondary,
-            showDragHandle: true,
-            builder: (_) => _TargetSheet(type: t, targets: targets),
-          );
-    if (target != null) {
-      controller.sendAction(
-        GameAction(type: t, source: me.id, target: target.id),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    Widget tile(ActionType t, String hint, {Role? role}) {
-      final why = _whyNot(t);
-      final bluff = role != null && !me.aliveRoles.contains(role);
-      return _ActionTile(
-        type: t,
-        hint: why ?? hint,
-        role: role,
-        bluff: bluff && why == null,
-        enabled: why == null,
-        onTap: () => _go(context, t),
-      );
-    }
-
-    final forcedCoup = me.coins >= 10;
-    return LayoutBuilder(
-      builder: (context, box) {
-        final cols = box.maxWidth >= 560 ? 4 : 2;
-        final gap = 8.0;
-        final w = (box.maxWidth - gap * (cols - 1)) / cols;
-        Widget grid(List<Widget> tiles) => Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: [for (final t in tiles) SizedBox(width: w, child: t)],
-        );
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (forcedCoup)
-              const _Note(
-                icon: Icons.warning_amber,
-                text: 'Com 10 moedas o Golpe é obrigatório.',
-                color: CoupColors.error,
-              ),
-            const _GroupLabel('Ações gerais'),
-            grid([
-              tile(ActionType.income, '+1 moeda'),
-              tile(ActionType.foreignAid, '+2 · Duque bloqueia'),
-              tile(ActionType.coup, '-7 · sem defesa'),
-            ]),
-            const SizedBox(height: 10),
-            const _GroupLabel('Personagens (vale blefar)'),
-            grid([
-              tile(ActionType.tax, '+3 moedas', role: Role.duke),
-              tile(ActionType.steal, 'Rouba até 2', role: Role.captain),
-              tile(
-                ActionType.assassinate,
-                '-3 · elimina carta',
-                role: Role.assassin,
-              ),
-              tile(ActionType.exchange, 'Troca cartas', role: Role.ambassador),
-            ]),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _GroupLabel extends StatelessWidget {
-  const _GroupLabel(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 6, left: 2),
-    child: Text(
-      text.toUpperCase(),
-      style: const TextStyle(
-        fontSize: 10,
-        letterSpacing: 1.6,
-        fontWeight: FontWeight.w800,
-        color: CoupColors.textMuted,
-      ),
-    ),
-  );
-}
-
-class _ActionTile extends StatelessWidget {
-  const _ActionTile({
-    required this.type,
-    required this.hint,
-    required this.enabled,
-    required this.onTap,
-    this.role,
-    this.bluff = false,
-  });
-
-  final ActionType type;
-  final String hint;
-  final bool enabled;
-  final VoidCallback onTap;
-  final Role? role;
-  final bool bluff;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = role != null ? roleStyle(role!) : null;
-    final accent = style?.accent ?? CoupColors.goldHigh;
-    return Opacity(
-      opacity: enabled ? 1 : 0.4,
-      child: Material(
-        color: style?.top.withValues(alpha: 0.35) ?? CoupColors.surfaceHigh,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: enabled ? onTap : null,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 52),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: accent.withValues(alpha: 0.45)),
-            ),
-            child: Row(
-              children: [
-                Icon(actionIcon(type), size: 20, color: accent),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        shortActionLabel(type),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: widget.active
+                    ? const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [CoupColors.goldHigh, CoupColors.gold],
+                      )
+                    : null,
+                color: widget.active ? null : CoupColors.surfaceHigh,
+                border: Border.all(
+                  color: widget.active
+                      ? CoupColors.goldHigh
+                      : CoupColors.border,
+                ),
+                boxShadow: widget.active
+                    ? [
+                        BoxShadow(
+                          color: CoupColors.gold.withValues(alpha: 0.5),
+                          blurRadius: 14,
                         ),
+                      ]
+                    : null,
+              ),
+              child: Material(
+                type: MaterialType.transparency,
+                shape: const CircleBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: widget.enabled ? widget.onTap : null,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        widget.active ? Icons.bolt : Icons.style_outlined,
+                        size: 24,
+                        color: widget.active
+                            ? Colors.black
+                            : CoupColors.textSecondary,
                       ),
                       Text(
-                        hint,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          color: CoupColors.textSecondary,
+                        widget.active ? 'AGIR' : 'AÇÕES',
+                        style: TextStyle(
+                          fontSize: 10,
+                          letterSpacing: 1.2,
+                          fontWeight: FontWeight.w900,
+                          color: widget.active
+                              ? Colors.black
+                              : CoupColors.textSecondary,
                         ),
                       ),
                     ],
                   ),
                 ),
-                if (bluff)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 5,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      color: CoupColors.bluff.withValues(alpha: 0.25),
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                    child: const Text(
-                      'BLEFE',
-                      style: TextStyle(
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.w900,
-                        color: CoupColors.bluff,
-                      ),
-                    ),
-                  ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _TargetSheet extends StatelessWidget {
-  const _TargetSheet({required this.type, required this.targets});
-  final ActionType type;
-  final List<Player> targets;
+class _RingPainter extends CustomPainter {
+  _RingPainter({required this.value, required this.color});
+  final double value;
+  final Color color;
 
   @override
-  Widget build(BuildContext context) => SafeArea(
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      rect.deflate(1.5),
+      0,
+      2 * math.pi,
+      false,
+      paint..color = CoupColors.border,
+    );
+    canvas.drawArc(
+      rect.deflate(1.5),
+      -math.pi / 2,
+      2 * math.pi * value.clamp(0, 1),
+      false,
+      paint..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_RingPainter old) =>
+      old.value != value || old.color != color;
+}
+
+// ------------------------------------------------------------ prompt bar
+
+class _Btn {
+  const _Btn(this.label, this.color, this.onTap, {this.icon});
+  final String label;
+  final Color? color;
+  final VoidCallback? onTap;
+  final IconData? icon;
+}
+
+class _PromptBar extends StatelessWidget {
+  const _PromptBar({
+    required this.title,
+    required this.subtitle,
+    required this.buttons,
+    this.timer,
+    this.role,
+    this.body,
+    this.accent = CoupColors.gold,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<_Btn> buttons;
+  final int? timer;
+  final Role? role;
+  final Widget? body;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: CoupColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accent.withValues(alpha: 0.6)),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black54,
+            blurRadius: 18,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            '${shortActionLabel(type)}: escolha o alvo',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-          ),
-          const SizedBox(height: 12),
-          for (final p in targets)
-            Card(
-              color: CoupColors.surface,
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                leading: PlayerAvatar(player: p, size: 40),
-                title: Text(p.name),
-                subtitle: Text(
-                  '${p.influence} influência${p.influence > 1 ? 's' : ''}',
-                  style: const TextStyle(color: CoupColors.textSecondary),
+          Row(
+            children: [
+              if (role != null) ...[
+                InfluenceCard(role: role, width: 30),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: CoupColors.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
-                trailing: CoinBadge(coins: p.coins),
-                onTap: () => Navigator.of(context).pop(p),
               ),
+              if (timer != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Text(
+                    '${timer}s',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                      color: timer! <= 10
+                          ? CoupColors.error
+                          : CoupColors.textMuted,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (body != null) ...[const SizedBox(height: 10), body!],
+          if (buttons.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                for (var i = 0; i < buttons.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  Expanded(child: _button(buttons[i])),
+                ],
+              ],
             ),
+          ],
         ],
       ),
-    ),
-  );
-}
-
-// --------------------------------------------------------------- decisions
-
-class _Btn {
-  const _Btn(this.label, this.icon, this.color, this.onTap);
-  final String label;
-  final IconData icon;
-  final Color? color;
-  final VoidCallback onTap;
-}
-
-class _DecisionCard extends StatelessWidget {
-  const _DecisionCard({
-    required this.title,
-    required this.body,
-    required this.buttons,
-    this.role,
-  });
-
-  final String title;
-  final String body;
-  final List<_Btn> buttons;
-  final Role? role;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            if (role != null) ...[
-              InfluenceCard(role: role, width: 36),
-              const SizedBox(width: 10),
-            ],
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    body,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: CoupColors.textSecondary,
-                      height: 1.3,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            for (var i = 0; i < buttons.length; i++) ...[
-              if (i > 0) const SizedBox(width: 8),
-              Expanded(child: _button(buttons[i])),
-            ],
-          ],
-        ),
-      ],
     );
   }
 
   Widget _button(_Btn b) {
-    final label = Text(
-      b.label,
-      maxLines: 2,
-      textAlign: TextAlign.center,
-      overflow: TextOverflow.ellipsis,
+    final label = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (b.icon != null) ...[
+          Icon(b.icon, size: 16),
+          const SizedBox(width: 4),
+        ],
+        Flexible(
+          child: Text(b.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+      ],
     );
-    void tap() {
-      HapticFeedback.selectionClick();
-      b.onTap();
-    }
-
+    final tap = b.onTap == null
+        ? null
+        : () {
+            HapticFeedback.selectionClick();
+            b.onTap!();
+          };
     if (b.color == null) {
       return OutlinedButton(onPressed: tap, child: label);
     }
     return FilledButton(
       style: FilledButton.styleFrom(
         backgroundColor: b.color,
-        foregroundColor: Colors.white,
+        foregroundColor: b.color == CoupColors.gold
+            ? Colors.black
+            : Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 8),
       ),
       onPressed: tap,
       child: label,
     );
   }
-}
-
-class _Note extends StatelessWidget {
-  const _Note({
-    required this.icon,
-    required this.text,
-    this.color = CoupColors.textSecondary,
-  });
-  final IconData icon;
-  final String text;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6),
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: color, fontSize: 13),
-          ),
-        ),
-      ],
-    ),
-  );
 }

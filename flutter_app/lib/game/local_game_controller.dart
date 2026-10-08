@@ -13,7 +13,7 @@ class LocalGameController extends GameController {
     required this.playerName,
     required this.botCount,
     this.personalities,
-    this.botDelay = const Duration(milliseconds: 1400),
+    this.botDelay = const Duration(milliseconds: 1100),
     this.turnSeconds = 30,
     Random? random,
   }) : _rng = random ?? Random() {

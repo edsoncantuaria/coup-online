@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:coup/engine/models.dart';
 import 'package:coup/game/local_game_controller.dart';
 import 'package:coup/main.dart';
 import 'package:coup/ui/screens/game_screen.dart';
@@ -64,4 +65,57 @@ void main() {
       },
     );
   }
+
+  testWidgets('botão Agir abre as ações e joga Renda', (tester) async {
+    tester.view.physicalSize = const Size(390, 844) * 3;
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    final controller = LocalGameController(
+      playerName: 'Teste',
+      botCount: 2,
+      botDelay: const Duration(milliseconds: 50),
+      turnSeconds: 600,
+      random: Random(3),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildCoupTheme(),
+        home: GameScreen(controller: controller),
+      ),
+    );
+    bool myAction() =>
+        controller.isMyDecision && controller.state.phase == Phase.action;
+    for (var i = 0; i < 500 && !myAction(); i++) {
+      // Responde passando a tudo que não for a própria ação.
+      if (controller.isMyDecision && controller.state.phase != Phase.action) {
+        final s = controller.state;
+        if (s.phase == Phase.losingInfluence) {
+          controller.selectInfluence(controller.me!.aliveRoles.first);
+        } else if (s.phase == Phase.exchanging) {
+          controller.confirmExchange(
+            controller.me!.aliveRoles.take(controller.me!.influence).toList(),
+          );
+        } else {
+          controller.sendResponse(ResponseType.pass);
+        }
+      }
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(myAction(), isTrue);
+    final before = controller.me!.coins;
+
+    await tester.tap(find.text('AGIR'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('Sua jogada'), findsOneWidget);
+    await tester.tap(find.text('Renda'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('Sua jogada'), findsNothing);
+    expect(controller.me!.coins, before + 1);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(const SizedBox());
+  });
 }

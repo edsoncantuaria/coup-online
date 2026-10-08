@@ -35,6 +35,9 @@ class OnlineGameController extends GameController {
 
   bool get connected => _socket?.connected ?? false;
 
+  /// Socket bruto, para recursos que só trafegam sinalização (chat de voz).
+  io.Socket? get socket => _socket;
+
   bool get inRoom => _roomCode != null && _state != null;
 
   String? get hostId => _hostId;

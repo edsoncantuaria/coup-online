@@ -1,8 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../engine/labels.dart';
 import '../../engine/models.dart';
 import '../theme.dart';
+import 'common.dart';
 
 /// Carta de influência. Mostra arte do personagem, verso (oculta) ou a
 /// carta virada (perdida, em tons de cinza com caveira).
@@ -148,4 +151,41 @@ class InfluenceCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Vira a carta no eixo Y sempre que [flipKey] muda (revelação, perda,
+/// troca). A face antiga gira até ficar de lado e a nova surge do outro lado.
+class FlipSwitcher extends StatelessWidget {
+  const FlipSwitcher({super.key, required this.flipKey, required this.child});
+  final Object flipKey;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => GenSwitcher(
+    switchKey: flipKey,
+    duration: const Duration(milliseconds: 520),
+    switchInCurve: Curves.easeOut,
+    switchOutCurve: Curves.easeIn,
+    layoutBuilder: (current, previous) =>
+        Stack(alignment: Alignment.center, children: [...previous, ?current]),
+    transitionBuilder: (child, anim) => AnimatedBuilder(
+      animation: anim,
+      child: child,
+      builder: (_, child) {
+        // Os dois lados usam o mesmo ângulo; quem passa de 90° some.
+        final angle = (1 - anim.value) * math.pi;
+        if (angle > math.pi / 2) {
+          return Opacity(opacity: 0, child: child);
+        }
+        return Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.identity()
+            ..setEntry(3, 2, 0.0015)
+            ..rotateY(angle),
+          child: child,
+        );
+      },
+    ),
+    child: child,
+  );
 }

@@ -21,6 +21,18 @@ flutter build apk --dart-define=COUP_SERVER_URL=https://seu-servidor
 
 O jogador também pode trocar o servidor na tela Online (fica salvo no aparelho).
 
+## Chat de voz
+
+Nas salas online, o ícone de fone na barra superior entra no chat de voz
+(áudio WebRTC direto entre os jogadores; o servidor só repassa a sinalização).
+O STUN público do Google resolve a maioria das redes. Em redes com NAT
+restrito (4G, redes corporativas) é preciso um servidor TURN:
+
+```
+flutter run --dart-define=COUP_TURN_URL=turn:seu-host:3478 \
+  --dart-define=COUP_TURN_USER=usuario --dart-define=COUP_TURN_PASS=senha
+```
+
 ## Estrutura
 
 | Pasta | O que tem |

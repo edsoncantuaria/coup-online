@@ -7,8 +7,10 @@ import '../../engine/labels.dart';
 import '../../engine/models.dart';
 import '../../game/game_controller.dart';
 import '../../game/online_game_controller.dart';
+import '../../game/voice_chat.dart';
 import '../theme.dart';
 import 'common.dart';
+import 'voice_controls.dart';
 import 'influence_card.dart';
 
 // ---------------------------------------------------------------- log panel
@@ -381,8 +383,9 @@ class _StatRow extends StatelessWidget {
 // -------------------------------------------------------------------- lobby
 
 class LobbyView extends StatelessWidget {
-  const LobbyView({super.key, required this.controller});
+  const LobbyView({super.key, required this.controller, this.voice});
   final OnlineGameController controller;
+  final VoiceChat? voice;
 
   @override
   Widget build(BuildContext context) {
@@ -478,11 +481,26 @@ class LobbyView extends StatelessWidget {
                         : 'Jogador',
                     style: const TextStyle(color: CoupColors.textSecondary),
                   ),
-                  trailing: p.id == controller.hostId
-                      ? const Icon(Icons.star, color: CoupColors.gold)
-                      : null,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      VoiceBadge(muted: voice?.voiceOf(p.id), size: 14),
+                      if (p.id == controller.hostId) ...[
+                        const SizedBox(width: 8),
+                        const Icon(Icons.star, color: CoupColors.gold),
+                      ],
+                    ],
+                  ),
                 ),
               ),
+            if (voice != null && !voice!.joined) ...[
+              const SizedBox(height: 4),
+              TextButton.icon(
+                onPressed: voice!.joining ? null : voice!.join,
+                icon: const Icon(Icons.headset_mic_outlined),
+                label: const Text('Entrar no chat de voz'),
+              ),
+            ],
             const SizedBox(height: 16),
             if (controller.amHost) ...[
               OutlinedButton.icon(

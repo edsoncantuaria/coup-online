@@ -33,14 +33,10 @@ class Arena extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          child: KeyedSubtree(
-            key: ValueKey(
+        GenSwitcher(
+          switchKey:
               '${s.phase.wire}-${s.currentAction?.type}-${s.pendingBlock?.blockerId}-${s.turnIndex}',
-            ),
-            child: _move(context),
-          ),
+          child: _move(context),
         ),
         const SizedBox(height: 14),
         Text(
@@ -341,7 +337,7 @@ String describeWaiting(GameState s, String myId) {
   switch (s.phase) {
     case Phase.action:
       return s.currentPlayer?.id == myId
-          ? 'Escolha uma ação abaixo.'
+          ? 'Toque em Agir para escolher sua jogada.'
           : '${n(s.currentPlayer?.id)} está escolhendo uma ação.';
     case Phase.challenge:
       return me

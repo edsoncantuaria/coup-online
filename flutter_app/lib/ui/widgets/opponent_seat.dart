@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../engine/models.dart';
 import '../theme.dart';
 import 'common.dart';
+import 'voice_controls.dart';
 
 enum SeatState { idle, turn, waiting, target }
 
@@ -15,6 +16,7 @@ class OpponentSeat extends StatelessWidget {
     this.revealAll = false,
     this.width = 116,
     this.statusLabel,
+    this.voice,
   });
 
   final Player player;
@@ -24,6 +26,9 @@ class OpponentSeat extends StatelessWidget {
 
   /// Rótulo curto sobre o assento (ex.: "ALVO", "DESAFIOU").
   final String? statusLabel;
+
+  /// Estado no chat de voz: null = fora, true = mudo, false = falando.
+  final bool? voice;
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +76,12 @@ class OpponentSeat extends StatelessWidget {
                         ),
                       ),
                     ),
+                  ),
+                if (voice != null)
+                  Positioned(
+                    left: width / 2 - 34,
+                    bottom: -2,
+                    child: VoiceBadge(muted: voice, size: 11),
                   ),
                 if (state == SeatState.waiting)
                   const Positioned(

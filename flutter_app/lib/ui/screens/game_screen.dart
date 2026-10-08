@@ -4,11 +4,13 @@ import 'package:flutter/services.dart';
 import '../../engine/models.dart';
 import '../../game/game_controller.dart';
 import '../../game/online_game_controller.dart';
+import '../../game/voice_chat.dart';
 import '../theme.dart';
 import '../widgets/arena.dart';
 import '../widgets/my_panel.dart';
 import '../widgets/opponent_seat.dart';
 import '../widgets/table_extras.dart';
+import '../widgets/voice_controls.dart';
 import 'rules_screen.dart';
 
 /// Largura a partir da qual o registro vira uma coluna fixa ao lado da mesa.
@@ -26,17 +28,29 @@ class _GameScreenState extends State<GameScreen> {
   GameController get c => widget.controller;
   int? _lastInvalidStamp;
   bool _wasMyDecision = false;
+  VoiceChat? _voice;
 
   @override
   void initState() {
     super.initState();
     _lastInvalidStamp = c.state?.lastInvalid?.stamp;
     c.addListener(_onChange);
+    final online = c;
+    if (online is OnlineGameController) {
+      _voice = VoiceChat(online)..addListener(_onVoice);
+    }
+  }
+
+  void _onVoice() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     c.removeListener(_onChange);
+    _voice
+      ?..removeListener(_onVoice)
+      ..dispose();
     c.leave();
     super.dispose();
   }
@@ -114,20 +128,39 @@ class _GameScreenState extends State<GameScreen> {
         appBar: AppBar(
           title: _title(s),
           actions: [
-            IconButton(
-              tooltip: 'Regras',
-              icon: const Icon(Icons.menu_book_outlined),
-              onPressed: () => Navigator.of(context)
-                  .push(MaterialPageRoute(builder: (_) => const RulesScreen())),
-            ),
-            if (showTable && !wide)
-              Builder(
-                builder: (ctx) => IconButton(
-                  tooltip: 'Registro',
-                  icon: const Icon(Icons.receipt_long_outlined),
-                  onPressed: () => Scaffold.of(ctx).openEndDrawer(),
-                ),
+            if (_voice != null && s != null) VoiceButton(voice: _voice!),
+            Builder(
+              builder: (ctx) => PopupMenuButton<String>(
+                tooltip: 'Mais',
+                icon: const Icon(Icons.more_vert),
+                color: CoupColors.surface,
+                onSelected: (v) {
+                  if (v == 'log') Scaffold.of(ctx).openEndDrawer();
+                  if (v == 'rules') {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const RulesScreen()),
+                    );
+                  }
+                },
+                itemBuilder: (_) => [
+                  if (showTable && !wide)
+                    const PopupMenuItem(
+                      value: 'log',
+                      child: ListTile(
+                        leading: Icon(Icons.receipt_long_outlined),
+                        title: Text('Registro da partida'),
+                      ),
+                    ),
+                  const PopupMenuItem(
+                    value: 'rules',
+                    child: ListTile(
+                      leading: Icon(Icons.menu_book_outlined),
+                      title: Text('Regras'),
+                    ),
+                  ),
+                ],
               ),
+            ),
           ],
         ),
         endDrawer: showTable && !wide
@@ -139,7 +172,7 @@ class _GameScreenState extends State<GameScreen> {
         body: s == null
             ? const Center(child: CircularProgressIndicator())
             : !c.started
-            ? LobbyView(controller: c as OnlineGameController)
+            ? LobbyView(controller: c as OnlineGameController, voice: _voice)
             : Row(
                 children: [
                   Expanded(child: _table(s, wide)),
@@ -203,16 +236,7 @@ class _GameScreenState extends State<GameScreen> {
                   ),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 520),
-                    child: Builder(
-                      builder: (ctx) => Arena(
-                        state: s,
-                        myId: c.myId,
-                        showRecentLog: !wide,
-                        onOpenLog: wide
-                            ? null
-                            : () => Scaffold.of(ctx).openEndDrawer(),
-                      ),
-                    ),
+                    child: Arena(state: s, myId: c.myId, showRecentLog: false),
                   ),
                 ),
               ),
@@ -220,7 +244,10 @@ class _GameScreenState extends State<GameScreen> {
             Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 760),
-                child: MyPanel(controller: c),
+                child: MyPanel(
+                  controller: c,
+                  trailing: VoiceBadge(muted: _voice?.voiceOf(c.myId)),
+                ),
               ),
             ),
           ],
@@ -259,6 +286,7 @@ class _GameScreenState extends State<GameScreen> {
                 player: p,
                 width: width,
                 revealAll: s.phase == Phase.gameOver,
+                voice: _voice?.voiceOf(p.id),
                 state: pending == p.id && inResponse
                     ? SeatState.waiting
                     : s.currentPlayer?.id == p.id && s.phase != Phase.gameOver

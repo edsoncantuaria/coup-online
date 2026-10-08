@@ -22,6 +22,8 @@ type RoomEntry = {
   passwordPlain?: string;
   hostId: string;
   timer?: ReturnType<typeof setTimeout>;
+  /** Quem está no chat de voz da sala → microfone mudo? */
+  voice: Map<string, boolean>;
 };
 
 function normRoomId(id: unknown): string {
@@ -109,6 +111,7 @@ export class RoomManager {
         engine,
         displayName: dn.slice(0, 48),
         hostId: socket.id,
+        voice: new Map(),
         ...(pw ? { passwordPlain: pw.slice(0, 64) } : {}),
       });
       socket.join(roomId);
@@ -146,6 +149,7 @@ export class RoomManager {
       socket.join(rid);
       this.socketToRoom.set(socket.id, rid);
       this.broadcast(rid);
+      this.broadcastVoice(rid);
     });
 
     socket.on('add_bot', (data: unknown) => {
@@ -218,6 +222,54 @@ export class RoomManager {
     });
 
     socket.on('leave_room', () => this.leaveCurrentRoom(socket));
+
+    // Chat de voz: o servidor só repassa a sinalização WebRTC entre membros
+    // da mesma sala; o áudio vai direto entre os navegadores/aparelhos.
+    socket.on('voice_join', () => {
+      const roomId = this.socketToRoom.get(socket.id);
+      const entry = roomId ? this.rooms.get(roomId) : undefined;
+      if (!roomId || !entry) return;
+      const peers = [...entry.voice.keys()].filter((id) => id !== socket.id);
+      entry.voice.set(socket.id, false);
+      // Quem entra por último inicia as conexões com quem já está.
+      socket.emit('voice_peers', { peers });
+      this.broadcastVoice(roomId);
+    });
+
+    socket.on('voice_leave', () => this.leaveVoice(socket.id));
+
+    socket.on('voice_mute', (data: { muted?: unknown }) => {
+      const roomId = this.socketToRoom.get(socket.id);
+      const entry = roomId ? this.rooms.get(roomId) : undefined;
+      if (!roomId || !entry?.voice.has(socket.id)) return;
+      entry.voice.set(socket.id, data?.muted === true);
+      this.broadcastVoice(roomId);
+    });
+
+    socket.on('voice_signal', (data: { to?: unknown; data?: unknown }) => {
+      const roomId = this.socketToRoom.get(socket.id);
+      const entry = roomId ? this.rooms.get(roomId) : undefined;
+      const to = typeof data?.to === 'string' ? data.to : '';
+      if (!entry || !entry.voice.has(socket.id) || !entry.voice.has(to)) return;
+      if (this.socketToRoom.get(to) !== roomId) return;
+      const payload = JSON.stringify(data.data ?? null);
+      if (payload.length > 20_000) return;
+      this.io.to(to).emit('voice_signal', { from: socket.id, data: data.data });
+    });
+  }
+
+  private leaveVoice(socketId: string) {
+    const roomId = this.socketToRoom.get(socketId);
+    const entry = roomId ? this.rooms.get(roomId) : undefined;
+    if (!roomId || !entry || !entry.voice.delete(socketId)) return;
+    this.broadcastVoice(roomId);
+  }
+
+  private broadcastVoice(roomId: string) {
+    const entry = this.rooms.get(roomId);
+    if (!entry) return;
+    const members = [...entry.voice.entries()].map(([id, muted]) => ({ id, muted }));
+    this.io.to(roomId).emit('voice_state', { members });
   }
 
   public handleDisconnect(socket: Socket) {
@@ -227,6 +279,7 @@ export class RoomManager {
   private leaveCurrentRoom(socket: Socket) {
     const roomId = this.socketToRoom.get(socket.id);
     if (!roomId) return;
+    this.leaveVoice(socket.id);
     this.socketToRoom.delete(socket.id);
     socket.leave(roomId);
     const entry = this.rooms.get(roomId);
