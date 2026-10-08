@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { io as connectClient } from 'socket.io-client';
 import { startServer } from '../dist/server.js';
+import { MemoryMailer } from '../dist/mail/Mailer.js';
 
 // Senhas de teste geradas na hora (nada fixo no código).
 const PW = randomBytes(6).toString('hex');
@@ -17,6 +18,7 @@ const PW_WRONG = `${PW}-x`;
 let server;
 let base;
 let dataDir;
+const mailer = new MemoryMailer();
 const clients = [];
 
 before(async () => {
@@ -28,6 +30,8 @@ before(async () => {
     queue: { gatherMs: 300, botFillMs: 900, tickMs: 50, minPlayers: 4, botFillTarget: 4 },
     reports: { limit: 2, windowMs: 60_000 },
     registerPerHour: 100,
+    mailer,
+    publicUrl: 'https://intriga.test',
   });
   base = `http://localhost:${server.port}`;
 });
@@ -89,22 +93,31 @@ async function post(p, body, token) {
 }
 
 async function account(name) {
-  const r = await post('/api/auth/register', { username: name, password: PW });
+  const r = await post('/api/auth/register', { username: name, email: `${name}@exemplo.com`, password: PW });
   assert.equal(r.status, 201, JSON.stringify(r.body));
   return r.body;
 }
 
 test('cria conta, entra, sessão por token e nada sensível vaza', async () => {
-  const reg = await post('/api/auth/register', { username: 'Alice', password: PW });
+  const reg = await post('/api/auth/register', { username: 'Alice', email: 'Alice@Exemplo.com', password: PW });
   assert.equal(reg.status, 201);
   assert.equal(reg.body.user.username, 'Alice');
   assert.ok(reg.body.token.length >= 40);
-  assert.deepEqual(Object.keys(reg.body.user).sort(), ['id', 'username']);
+  assert.deepEqual(Object.keys(reg.body.user).sort(), ['email', 'emailVerified', 'id', 'username']);
+  assert.equal(reg.body.user.emailVerified, false);
 
-  assert.equal((await post('/api/auth/register', { username: 'alice', password: PW_OTHER })).status, 409);
-  assert.equal((await post('/api/auth/register', { username: 'x', password: PW })).body.code, 'INVALID_USERNAME');
-  assert.equal((await post('/api/auth/register', { username: 'Bruno', password: '123' })).body.code, 'INVALID_PASSWORD');
-  assert.equal((await post('/api/auth/register', { username: { $ne: 1 }, password: PW })).status, 400);
+  const reg2 = (body) => post('/api/auth/register', body);
+  assert.equal((await reg2({ username: 'alice', email: 'outra@exemplo.com', password: PW_OTHER })).body.code, 'USERNAME_TAKEN');
+  assert.equal((await reg2({ username: 'Alicia', email: 'alice@exemplo.com', password: PW_OTHER })).body.code, 'EMAIL_TAKEN');
+  assert.equal((await reg2({ username: 'Bruno', email: 'sem-arroba', password: PW })).body.code, 'INVALID_EMAIL');
+  assert.equal((await reg2({ username: 'Bruno', password: PW })).body.code, 'INVALID_EMAIL');
+  assert.equal((await reg2({ username: 'x', email: 'x@exemplo.com', password: PW })).body.code, 'INVALID_USERNAME');
+  assert.equal((await reg2({ username: 'Bruno', email: 'b@exemplo.com', password: '123' })).body.code, 'INVALID_PASSWORD');
+  assert.equal((await reg2({ username: { $ne: 1 }, email: 'b@exemplo.com', password: PW })).status, 400);
+
+  // Entra também pelo email, sem diferenciar maiúsculas.
+  const byEmail = await post('/api/auth/login', { login: 'ALICE@exemplo.com', password: PW });
+  assert.equal(byEmail.body.user.id, reg.body.user.id);
 
   const bad = await post('/api/auth/login', { username: 'alice', password: PW_WRONG });
   assert.equal(bad.status, 401);
@@ -306,4 +319,54 @@ test('denúncias: guarda, conta por jogador, bloqueia repetição e excesso', as
   assert.equal(mine[0].note, 'gritou no chat');
   assert.equal(doc.counts['guest:rival 0'].total, 2);
   assert.equal(doc.counts['guest:rival 0'].voice_abuse, 1);
+});
+
+test('confirma o email e troca a senha pelos links do email', async () => {
+  const reg = await account('Clara');
+  const mailTo = (to, subject) => mailer.sent.filter((m) => m.to === to && m.subject.includes(subject)).at(-1);
+  const tokenOf = (m, p) => new URL(m.text.match(/https:\/\/\S+/)[0]).searchParams.get('token') ?? assert.fail(p);
+
+  // Confirmação: link no email, página abre e marca a conta.
+  const verify = mailTo('Clara@exemplo.com', 'Confirme');
+  assert.ok(verify, 'email de confirmação enviado');
+  assert.ok(verify.text.includes('https://intriga.test/verify-email?token='));
+  const vt = tokenOf(verify);
+  const page = await fetch(`${base}/verify-email?token=${vt}`);
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /Email confirmado/);
+  assert.equal((await fetch(`${base}/verify-email?token=${vt}`)).status, 400, 'link de uso único');
+  const meRes = await fetch(`${base}/api/auth/me`, { headers: { authorization: `Bearer ${reg.token}` } });
+  assert.equal((await meRes.json()).user.emailVerified, true);
+  assert.equal((await post('/api/auth/resend-verification', {}, reg.token)).body.code, 'ALREADY_VERIFIED');
+
+  // Esqueci a senha: mesma resposta exista ou não a conta.
+  const before = mailer.sent.length;
+  assert.equal((await post('/api/auth/forgot-password', { email: 'ninguem@exemplo.com' })).status, 200);
+  assert.equal(mailer.sent.length, before);
+  assert.equal((await post('/api/auth/forgot-password', { email: 'clara@EXEMPLO.com' })).status, 200);
+  const reset = mailTo('Clara@exemplo.com', 'senha');
+  assert.ok(reset.text.includes('https://intriga.test/reset-password?token='));
+  const rt = tokenOf(reset);
+  assert.match(await (await fetch(`${base}/reset-password?token=${rt}`)).text(), /TROCAR SENHA/);
+
+  assert.equal((await post('/api/auth/reset-password', { token: rt, password: '123' })).body.code, 'INVALID_PASSWORD');
+  assert.equal((await post('/api/auth/reset-password', { token: rt, password: PW_OTHER })).status, 200);
+  assert.equal((await post('/api/auth/reset-password', { token: rt, password: PW })).body.code, 'INVALID_TOKEN');
+
+  // A senha antiga e as sessões abertas deixam de valer.
+  assert.equal((await post('/api/auth/login', { login: 'clara', password: PW })).status, 401);
+  assert.equal((await post('/api/auth/login', { login: 'clara@exemplo.com', password: PW_OTHER })).status, 200);
+  const old = await fetch(`${base}/api/auth/me`, { headers: { authorization: `Bearer ${reg.token}` } });
+  assert.equal(old.status, 401);
+
+  // Pelo socket também dá para pedir o link.
+  const s = await client();
+  assert.equal((await ack(s, 'account_forgot_password', { email: 'clara@exemplo.com' })).ok, true);
+
+  // O email de um jogador nunca aparece para os outros.
+  server.flush();
+  const doc = JSON.parse(fs.readFileSync(path.join(dataDir, 'accounts.json'), 'utf8'));
+  const clara = doc.users.find((u) => u.username === 'Clara');
+  assert.ok(!JSON.stringify(doc).includes(rt) && !JSON.stringify(doc).includes(vt), 'tokens só como hash');
+  assert.equal(clara.emailKey, 'clara@exemplo.com');
 });

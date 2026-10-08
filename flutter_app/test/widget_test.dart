@@ -148,4 +148,37 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('Entrar oferece convidado, login e cadastro', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const CoupApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('ENTRAR'));
+    await tester.pumpAndSettle();
+    expect(find.text('Entrar com login'.toUpperCase()), findsOneWidget);
+    expect(find.text('Criar conta'.toUpperCase()), findsOneWidget);
+    expect(find.text('Jogar como convidado'), findsOneWidget);
+
+    // Cadastro pede usuário, email e senha.
+    await tester.tap(find.text('CRIAR CONTA'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextField, 'Email'), findsOneWidget);
+    await tester.tap(find.byTooltip('Voltar'));
+    await tester.pumpAndSettle();
+
+    // Convidado: só o nome, que passa a aparecer no alto da abertura.
+    await tester.tap(find.text('Jogar como convidado'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Rita');
+    await tester.tap(find.text('JOGAR COMO CONVIDADO'));
+    await tester.pumpAndSettle();
+    expect(find.text('CONVIDADO'), findsOneWidget);
+    expect(find.text('Rita'), findsOneWidget);
+    expect(find.text('ENTRAR'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox());
+  });
 }

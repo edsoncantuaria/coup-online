@@ -9,8 +9,11 @@ import '../../engine/bot.dart';
 import '../../engine/labels.dart';
 import '../../engine/models.dart';
 import '../../game/local_game_controller.dart';
+import '../../online/account_service.dart';
+import '../../online/online_hub.dart';
 import '../../settings.dart';
 import '../theme.dart';
+import '../widgets/entry_sheet.dart';
 import '../widgets/tv.dart';
 import 'campaign_screen.dart';
 import 'game_screen.dart';
@@ -52,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen>
         _name = v.$1;
         _server = v.$2;
       });
+      _resumeAccount();
     });
     Settings.loadSkill().then((v) {
       final skill = BotSkill.values.where((s) => s.name == v).firstOrNull;
@@ -64,8 +68,47 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
+    _hub?.account.removeListener(_onAccount);
     _open.dispose();
     super.dispose();
+  }
+
+  /// Conexão online (só existe depois de entrar ou com sessão salva).
+  OnlineHub? _hub;
+  AccountUser? get _user => _hub?.account.user;
+
+  OnlineHub _ensureHub() {
+    final hub = OnlineHub.forServer(_server);
+    if (!identical(hub, _hub)) {
+      _hub?.account.removeListener(_onAccount);
+      _hub = hub..account.addListener(_onAccount);
+    }
+    return hub;
+  }
+
+  void _onAccount() {
+    if (mounted) setState(() {});
+  }
+
+  /// Com uma sessão salva, retoma a conta em segundo plano.
+  Future<void> _resumeAccount() async {
+    if (!await AccountService.hasSavedSession()) return;
+    if (!mounted) return;
+    _ensureHub().start();
+  }
+
+  /// Entrar: convidado, login ou cadastro (logado, mostra a conta).
+  Future<void> _enter() async {
+    final hub = _ensureHub();
+    await showEntrySheet(
+      context,
+      account: hub.account,
+      guestName: _name,
+      onGuestName: (n) {
+        setState(() => _name = n);
+        Settings.save(name: n);
+      },
+    );
   }
 
   Future<void> _loadCampaign() async {
@@ -84,40 +127,8 @@ class _HomeScreenState extends State<HomeScreen>
     setState(() => _lead = others[Random().nextInt(others.length)]);
   }
 
-  String get _playerName => _name.trim().isEmpty ? 'Jogador' : _name.trim();
-
-  Future<void> _editName() async {
-    final ctrl = TextEditingController(text: _name);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Seu nome na mesa'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          maxLength: 16,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            hintText: 'Como os rivais vão te chamar',
-          ),
-          onSubmitted: (v) => Navigator.pop(context, v),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('CANCELAR'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, ctrl.text),
-            child: const Text('SALVAR'),
-          ),
-        ],
-      ),
-    );
-    if (name == null || !mounted) return;
-    setState(() => _name = name.trim());
-    Settings.save(name: _name);
-  }
+  String get _playerName =>
+      _user?.username ?? (_name.trim().isEmpty ? 'Jogador' : _name.trim());
 
   Future<void> _go(Widget screen) async {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
@@ -265,7 +276,12 @@ class _HomeScreenState extends State<HomeScreen>
       ],
     );
 
-    final starring = _Starring(name: _name, onTap: _editName, onInfo: _about);
+    final starring = _Starring(
+      account: _user?.username,
+      guest: _name,
+      onTap: _enter,
+      onInfo: _about,
+    );
 
     if (wide) {
       return Scaffold(
@@ -402,20 +418,49 @@ class _Scrim extends StatelessWidget {
   );
 }
 
-/// "Estrelando" e o nome do jogador no alto da abertura; tocar edita o nome.
+/// Quem está na mesa, no alto da abertura. Sem ninguém, o botão Entrar
+/// (convidado, login ou cadastro); tocar no nome abre a mesma porta.
 class _Starring extends StatelessWidget {
   const _Starring({
-    required this.name,
+    required this.account,
+    required this.guest,
     required this.onTap,
     required this.onInfo,
   });
-  final String name;
+
+  /// Nome da conta logada, se houver.
+  final String? account;
+
+  /// Nome de convidado salvo (vazio = ninguém entrou ainda).
+  final String guest;
   final VoidCallback onTap;
   final VoidCallback onInfo;
 
   @override
   Widget build(BuildContext context) {
-    final has = name.trim().isNotEmpty;
+    final name = account ?? guest.trim();
+    final info = IconButton(
+      tooltip: 'Sobre o $appName',
+      onPressed: onInfo,
+      icon: const Icon(Icons.info_outline, color: Tv.creditDim),
+    );
+    if (name.isEmpty) {
+      return Row(
+        children: [
+          OutlinedButton.icon(
+            onPressed: onTap,
+            icon: const Icon(Icons.login, size: 18),
+            label: const Text('ENTRAR'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(48, 44),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+          ),
+          const Spacer(),
+          info,
+        ],
+      );
+    }
     return Row(
       children: [
         Expanded(
@@ -425,30 +470,26 @@ class _Starring extends StatelessWidget {
               constraints: const BoxConstraints(minHeight: 48),
               child: Row(
                 children: [
-                  Text('NA MESA', style: TvType.credit(11)),
+                  Text(
+                    account != null ? 'NA MESA' : 'CONVIDADO',
+                    style: TvType.credit(11),
+                  ),
                   const SizedBox(width: 10),
                   Flexible(
                     child: Text(
-                      has ? name.trim() : 'seu nome aqui',
+                      name,
                       overflow: TextOverflow.ellipsis,
-                      style: TvType.name(
-                        20,
-                        color: has ? Tv.credit : Tv.creditDim,
-                      ),
+                      style: TvType.name(20, color: Tv.credit),
                     ),
                   ),
                   const SizedBox(width: 8),
-                  const Icon(Icons.edit, size: 14, color: Tv.creditDim),
+                  const Icon(Icons.expand_more, size: 18, color: Tv.creditDim),
                 ],
               ),
             ),
           ),
         ),
-        IconButton(
-          tooltip: 'Sobre o $appName',
-          onPressed: onInfo,
-          icon: const Icon(Icons.info_outline, color: Tv.creditDim),
-        ),
+        info,
       ],
     );
   }

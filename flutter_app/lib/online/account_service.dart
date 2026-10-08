@@ -5,28 +5,47 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'online_connection.dart';
 
-/// Conta logada (só id e nome; o resto nunca sai do servidor).
+/// Conta logada. O email só chega para o próprio dono.
 @immutable
 class AccountUser {
-  const AccountUser({required this.id, required this.username});
+  const AccountUser({
+    required this.id,
+    required this.username,
+    this.email,
+    this.emailVerified = false,
+  });
 
   static AccountUser? fromJson(Object? json) {
     if (json is! Map) return null;
     final id = json['id'];
     final username = json['username'];
     if (id is! String || username is! String) return null;
-    return AccountUser(id: id, username: username);
+    final email = json['email'];
+    return AccountUser(
+      id: id,
+      username: username,
+      email: email is String ? email : null,
+      emailVerified: json['emailVerified'] == true,
+    );
   }
 
   final String id;
   final String username;
 
-  @override
-  bool operator ==(Object other) =>
-      other is AccountUser && other.id == id && other.username == username;
+  /// Null em contas criadas antes do email.
+  final String? email;
+  final bool emailVerified;
 
   @override
-  int get hashCode => Object.hash(id, username);
+  bool operator ==(Object other) =>
+      other is AccountUser &&
+      other.id == id &&
+      other.username == username &&
+      other.email == email &&
+      other.emailVerified == emailVerified;
+
+  @override
+  int get hashCode => Object.hash(id, username, email, emailVerified);
 }
 
 /// Conta do jogador: cadastro, login, sessão salva no aparelho e logout.
@@ -76,11 +95,31 @@ class AccountService extends ChangeNotifier {
     return null;
   }
 
+  /// Valida o email (o link de confirmação é quem prova); null se ok.
+  static String? validateEmail(String raw) {
+    final e = raw.trim();
+    if (e.length > 254 ||
+        !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$').hasMatch(e)) {
+      return 'Digite um email válido.';
+    }
+    return null;
+  }
+
   /// Valida a senha como o servidor; null se estiver ok.
   static String? validatePassword(String pw) {
     if (pw.length < 6) return 'A senha precisa de pelo menos 6 caracteres.';
     if (pw.length > 128) return 'Senha longa demais.';
     return null;
+  }
+
+  /// Há uma sessão salva neste aparelho (sem conectar).
+  static Future<bool> hasSavedSession() async {
+    try {
+      return (await SharedPreferences.getInstance()).getString(tokenKey) !=
+          null;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Lê o token salvo e entra com ele (conecta se preciso).
@@ -94,11 +133,54 @@ class AccountService extends ChangeNotifier {
     return _authenticate();
   }
 
-  Future<ServerReply> register(String username, String password) =>
-      _signIn('account_register', username, password);
+  /// Cria a conta; o servidor manda o link de confirmação para o email.
+  Future<ServerReply> register(String username, String email, String password) {
+    final local =
+        validateUsername(username) ??
+        validateEmail(email) ??
+        validatePassword(password);
+    if (local != null) {
+      return Future.value(_fail(ServerReply.failure('INVALID', local)));
+    }
+    return _signIn('account_register', {
+      'username': username.trim(),
+      'email': email.trim(),
+      'password': password,
+    });
+  }
 
-  Future<ServerReply> login(String username, String password) =>
-      _signIn('account_login', username, password);
+  /// Entra com o nome de usuário ou com o email.
+  Future<ServerReply> login(String login, String password) {
+    final l = login.trim();
+    final local = l.contains('@') ? validateEmail(l) : validateUsername(l);
+    if (local != null) {
+      return Future.value(_fail(ServerReply.failure('INVALID', local)));
+    }
+    return _signIn('account_login', {'login': l, 'password': password});
+  }
+
+  /// Pede o link de troca de senha. A resposta é a mesma exista ou não
+  /// uma conta com esse email.
+  Future<ServerReply> forgotPassword(String email) async {
+    final local = validateEmail(email);
+    if (local != null) return _fail(ServerReply.failure('INVALID', local));
+    return _call('account_forgot_password', {'email': email.trim()});
+  }
+
+  /// Manda de novo o link de confirmação do email.
+  Future<ServerReply> resendVerification() =>
+      _call('account_resend_verification');
+
+  /// Atualiza a conta (ex.: depois de confirmar o email no navegador).
+  Future<void> refresh() async {
+    if (_token == null || !connection.connected) return;
+    final reply = await connection.request('account_me');
+    final u = reply.ok ? AccountUser.fromJson(reply.data['user']) : null;
+    if (u != null && u != _user) {
+      _user = u;
+      notifyListeners();
+    }
+  }
 
   /// Sai da conta: revoga o token no servidor e apaga do aparelho.
   Future<void> logout() async {
@@ -106,15 +188,7 @@ class AccountService extends ChangeNotifier {
     await _setSession(null, null);
   }
 
-  Future<ServerReply> _signIn(
-    String event,
-    String username,
-    String password,
-  ) async {
-    final local =
-        validateUsername(username) ??
-        (event == 'account_register' ? validatePassword(password) : null);
-    if (local != null) return _fail(ServerReply.failure('INVALID', local));
+  Future<ServerReply> _call(String event, [Map<String, dynamic>? data]) async {
     _setBusy(true);
     try {
       if (!await connection.connect()) {
@@ -122,10 +196,24 @@ class AccountService extends ChangeNotifier {
           const ServerReply.failure('OFFLINE', 'Sem conexão com o servidor.'),
         );
       }
-      final reply = await connection.request(event, {
-        'username': username.trim(),
-        'password': password,
-      });
+      final reply = await connection.request(event, data);
+      if (!reply.ok) return _fail(reply);
+      _lastError = null;
+      return reply;
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  Future<ServerReply> _signIn(String event, Map<String, dynamic> data) async {
+    _setBusy(true);
+    try {
+      if (!await connection.connect()) {
+        return _fail(
+          const ServerReply.failure('OFFLINE', 'Sem conexão com o servidor.'),
+        );
+      }
+      final reply = await connection.request(event, data);
       if (!reply.ok) return _fail(reply);
       await _setSession(
         AccountUser.fromJson(reply.data['user']),
