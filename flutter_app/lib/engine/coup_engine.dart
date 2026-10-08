@@ -16,9 +16,7 @@ class ValidationResult {
 class CoupEngine {
   CoupEngine(String roomId, {Random? random})
     : _rng = random ?? Random(),
-      state = GameState(roomId: roomId) {
-    state.logs = ['🏰 Aguardando nobres para iniciar a sessão...'];
-  }
+      state = GameState(roomId: roomId);
 
   /// Reidrata a partir de um snapshot (retomar partida / testes).
   factory CoupEngine.hydrate(GameState snapshot, {Random? random}) {
