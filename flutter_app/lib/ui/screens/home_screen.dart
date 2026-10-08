@@ -754,7 +754,7 @@ class _CampaignCard extends StatelessWidget {
                     Text(
                       run == null
                           ? 'Sete cortes até o trono. Cada partida sorteia '
-                                'uma punição; cada vitória, uma bênção.'
+                                'uma punição, e as bênçãos são raras.'
                           : 'Você está na ${courts[run.court].name}.',
                       style: const TextStyle(
                         fontSize: 13,

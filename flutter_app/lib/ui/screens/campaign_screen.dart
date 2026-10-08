@@ -11,7 +11,8 @@ import '../theme.dart';
 import 'game_screen.dart';
 
 /// Modo campanha: sete cortes em sequência, cada partida com uma punição
-/// sorteada. Vencer dá uma bênção; perder sem vidas encerra a campanha.
+/// sorteada. Algumas vitórias dão uma bênção; perder sem vidas encerra a
+/// campanha.
 class CampaignScreen extends StatefulWidget {
   const CampaignScreen({super.key, required this.playerName});
   final String playerName;
@@ -106,10 +107,21 @@ class _CampaignScreenState extends State<CampaignScreen> {
       ),
     );
     if (!mounted) return;
+    final court = run.court;
     setState(() => run.finishMatch(won == true, _rng));
     if (run.status == RunStatus.won) await CampaignStore.addCrown();
     await _save();
     if (!mounted) return;
+    if (won == true &&
+        run.status == RunStatus.active &&
+        !run.choosingBlessing &&
+        blessingRewardAt(court) == BlessingReward.chance) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('A sorte não sorriu: nenhuma bênção desta vez.'),
+        ),
+      );
+    }
     if (won != true && run.status == RunStatus.active) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -215,7 +227,8 @@ class _Intro extends StatelessWidget {
         ),
         const _Bullet(
           Icons.auto_awesome,
-          'Vença para escolher uma bênção que fica até o fim.',
+          'Bênçãos são raras: vencer as cortes 1 e 4 garante uma, e a corte '
+          '6 dá 50% de chance. Elas valem até o fim.',
         ),
         _Bullet(
           Icons.favorite,
@@ -397,49 +410,84 @@ class _CourtPath extends StatelessWidget {
     final done = i < run.court;
     final current = i == run.court;
     final last = i == courts.length - 1;
+    final reward = blessingRewardAt(i);
+    final node = _circle(i, done, current, last);
+    if (reward == BlessingReward.none) {
+      return Tooltip(message: courts[i].name, child: node);
+    }
+    final sure = reward == BlessingReward.sure;
     return Tooltip(
-      message: courts[i].name,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        width: current ? 40 : 30,
-        height: current ? 40 : 30,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: done
-              ? CoupColors.gold
-              : current
-              ? CoupColors.surfaceHigh
-              : CoupColors.surface,
-          border: Border.all(
-            color: done || current ? CoupColors.goldHigh : CoupColors.border,
-            width: current ? 2.5 : 1,
+      message:
+          '${courts[i].name} · '
+          '${sure ? 'bênção garantida' : '50% de chance de bênção'}',
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          node,
+          Positioned(
+            right: -6,
+            top: -6,
+            child: Container(
+              width: 18,
+              height: 18,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: done ? CoupColors.surface : CoupColors.redDeep,
+                border: Border.all(color: CoupColors.goldHigh, width: 1),
+              ),
+              child: Icon(
+                sure ? Icons.auto_awesome : Icons.casino,
+                size: 11,
+                color: CoupColors.goldHigh,
+              ),
+            ),
           ),
-          boxShadow: current
-              ? [
-                  BoxShadow(
-                    color: CoupColors.gold.withValues(alpha: 0.5),
-                    blurRadius: 12,
-                  ),
-                ]
-              : null,
+        ],
+      ),
+    );
+  }
+
+  Widget _circle(int i, bool done, bool current, bool last) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: current ? 40 : 30,
+      height: current ? 40 : 30,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: done
+            ? CoupColors.gold
+            : current
+            ? CoupColors.surfaceHigh
+            : CoupColors.surface,
+        border: Border.all(
+          color: done || current ? CoupColors.goldHigh : CoupColors.border,
+          width: current ? 2.5 : 1,
         ),
-        child: Center(
-          child: done
-              ? const Icon(Icons.check, size: 16, color: Colors.black)
-              : last
-              ? Icon(
-                  Icons.castle,
-                  size: current ? 20 : 15,
-                  color: current ? CoupColors.goldHigh : CoupColors.textMuted,
-                )
-              : Text(
-                  '${i + 1}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: current ? CoupColors.goldHigh : CoupColors.textMuted,
-                  ),
+        boxShadow: current
+            ? [
+                BoxShadow(
+                  color: CoupColors.gold.withValues(alpha: 0.5),
+                  blurRadius: 12,
                 ),
-        ),
+              ]
+            : null,
+      ),
+      child: Center(
+        child: done
+            ? const Icon(Icons.check, size: 16, color: Colors.black)
+            : last
+            ? Icon(
+                Icons.castle,
+                size: current ? 20 : 15,
+                color: current ? CoupColors.goldHigh : CoupColors.textMuted,
+              )
+            : Text(
+                '${i + 1}',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: current ? CoupColors.goldHigh : CoupColors.textMuted,
+                ),
+              ),
       ),
     );
   }

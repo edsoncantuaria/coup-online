@@ -177,6 +177,21 @@ const curseInfo = {
 
 // ----------------------------------------------------------------- bênçãos
 
+/// Bênçãos são raras: vencer estas cortes (índice a partir de 0) garante
+/// uma; vencer a [luckyCourt] dá só uma chance.
+const blessingCourts = {0, 3};
+const luckyCourt = 5;
+const luckyChance = 0.5;
+
+/// Como a vitória na corte [i] recompensa: garantida, sorte ou nada.
+enum BlessingReward { none, sure, chance }
+
+BlessingReward blessingRewardAt(int i) => blessingCourts.contains(i)
+    ? BlessingReward.sure
+    : i == luckyCourt
+    ? BlessingReward.chance
+    : BlessingReward.none;
+
 enum BlessingId {
   inheritance,
   contessaVeil,
@@ -360,7 +375,17 @@ class CampaignRun {
       status = RunStatus.won;
       return;
     }
-    offer = _rollOffer(rng);
+    if (blessingCourts.contains(court) ||
+        (court == luckyCourt && rng.nextDouble() < luckyChance)) {
+      offer = _rollOffer(rng);
+    } else {
+      _advance(rng);
+    }
+  }
+
+  void _advance(Random rng) {
+    court += 1;
+    rollCurses(rng);
   }
 
   List<BlessingId> _rollOffer(Random rng) {
@@ -377,8 +402,7 @@ class CampaignRun {
     blessings.add(b);
     if (b == BlessingId.secondChance) lives += 1;
     offer = [];
-    court += 1;
-    rollCurses(rng);
+    _advance(rng);
   }
 
   Map<String, dynamic> toJson() => {

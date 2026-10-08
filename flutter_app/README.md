@@ -32,7 +32,8 @@ foram gerados a partir do mesmo desenho do brasão (`lib/ui/widgets/emblem.dart`
 
 Modo roguelike offline: 7 cortes em sequência, cada partida com uma punição
 sorteada (ex.: começar sem moedas, Golpe mais caro, rivais que conhecem uma
-das suas cartas). Vencer dá uma bênção à escolha; perder gasta a vida extra
+das suas cartas). Bênçãos são raras: vencer as cortes 1 e 4 garante uma
+à escolha, e a corte 6 dá 50% de chance. Perder gasta a vida extra
 ou encerra a campanha. Punições, bênçãos e cortes ficam em
 `lib/campaign/campaign.dart`. O teste `test/campaign_test.dart` simula milhares
 de partidas para garantir que nenhuma punição deixe a corte impossível; rode

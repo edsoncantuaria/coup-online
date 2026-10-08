@@ -24,6 +24,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('A Ascensão ao Trono'), findsOneWidget);
 
+      await tester.scrollUntilVisible(find.text('NOVA CAMPANHA'), 200);
       await tester.tap(find.text('NOVA CAMPANHA'));
       await tester.pump();
       expect(find.text('SORTEANDO...'), findsOneWidget);
