@@ -8,6 +8,10 @@ String roleLabel(Role r) => switch (r) {
   Role.ambassador => 'Embaixador',
 };
 
+/// "o Duque", "a Condessa"...
+String roleArticle(Role r) =>
+    '${r == Role.contessa ? 'a' : 'o'} ${roleLabel(r)}';
+
 String actionLabel(ActionType t) => switch (t) {
   ActionType.income => 'Renda',
   ActionType.foreignAid => 'Ajuda Externa',

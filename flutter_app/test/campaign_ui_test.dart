@@ -41,7 +41,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
       }
       expect(find.byType(GameScreen), findsOneWidget);
-      expect(find.text('CORTE 1/7'), findsOneWidget);
+      expect(find.text('Corte 1 de 7'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     });

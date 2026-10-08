@@ -6,13 +6,15 @@ import 'package:flutter/services.dart';
 
 import '../../campaign/campaign.dart';
 import '../../campaign/campaign_store.dart';
+import '../../engine/models.dart';
 import '../../game/local_game_controller.dart';
 import '../theme.dart';
+import '../widgets/tv.dart';
 import 'game_screen.dart';
 
-/// Modo campanha: sete cortes em sequência, cada partida com uma punição
-/// sorteada. Algumas vitórias dão uma bênção; perder sem vidas encerra a
-/// campanha.
+/// Modo campanha: uma temporada da novela em sete capítulos (as cortes),
+/// cada partida com uma punição sorteada. Algumas vitórias dão uma bênção;
+/// perder sem vidas encerra a temporada.
 class CampaignScreen extends StatefulWidget {
   const CampaignScreen({super.key, required this.playerName});
   final String playerName;
@@ -60,21 +62,16 @@ class _CampaignScreenState extends State<CampaignScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: CoupColors.surface,
         title: const Text('Abandonar a campanha?'),
         content: const Text('O progresso desta campanha será perdido.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Continuar'),
+            child: const Text('CONTINUAR'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: CoupColors.red,
-              foregroundColor: Colors.white,
-            ),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Abandonar'),
+            child: const Text('ABANDONAR'),
           ),
         ],
       ),
@@ -124,7 +121,7 @@ class _CampaignScreenState extends State<CampaignScreen> {
     }
     if (won != true && run.status == RunStatus.active) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text(
             'Você perdeu uma vida. Nova punição sorteada para a revanche.',
           ),
@@ -142,12 +139,41 @@ class _CampaignScreenState extends State<CampaignScreen> {
   @override
   Widget build(BuildContext context) {
     final run = _run;
+    // Entre um estado e outro a novela corta seco, sem transição.
+    final Widget body = _loading
+        ? const Center(child: CircularProgressIndicator())
+        : run == null
+        ? _Intro(
+            key: const ValueKey('intro'),
+            record: _record,
+            onStart: _newRun,
+          )
+        : run.status != RunStatus.active
+        ? _Finished(
+            key: ValueKey('end-${run.seed}'),
+            run: run,
+            onRestart: _newRun,
+          )
+        : run.choosingBlessing
+        ? _BlessingChoice(
+            key: ValueKey('offer-${run.court}'),
+            run: run,
+            onChoose: _choose,
+          )
+        : _NextCourt(
+            key: ValueKey('court-${run.seed}-${run.court}-${run.lives}'),
+            run: run,
+            onPlay: _play,
+          );
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text(
-          'CAMPANHA',
-          style: TextStyle(letterSpacing: 4, fontWeight: FontWeight.w800),
+        backgroundColor: WidgetStateColor.resolveWith(
+          (s) => s.contains(WidgetState.scrolledUnder)
+              ? Tv.ink
+              : Colors.transparent,
         ),
+        scrolledUnderElevation: 0,
         actions: [
           if (run != null && run.status == RunStatus.active)
             IconButton(
@@ -157,44 +183,203 @@ class _CampaignScreenState extends State<CampaignScreen> {
             ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 350),
-                  child: run == null
-                      ? _Intro(
-                          key: const ValueKey('intro'),
-                          record: _record,
-                          onStart: _newRun,
-                        )
-                      : run.status != RunStatus.active
-                      ? _Finished(
-                          key: ValueKey('end-${run.seed}'),
-                          run: run,
-                          onRestart: _newRun,
-                        )
-                      : run.choosingBlessing
-                      ? _BlessingChoice(
-                          key: ValueKey('offer-${run.court}'),
-                          run: run,
-                          onChoose: _choose,
-                        )
-                      : _NextCourt(
-                          key: ValueKey(
-                            'court-${run.seed}-${run.court}-${run.lives}',
-                          ),
-                          run: run,
-                          onPlay: _play,
-                        ),
-                ),
-              ),
-            ),
+      body: body,
     );
   }
 }
+
+// ------------------------------------------------------------------ palco
+
+/// Quem abre cada capítulo da temporada.
+const _courtLead = [
+  Role.ambassador, // Vila de Pedra
+  Role.captain, // Taverna do Porto
+  Role.duke, // Mercado de Sedas
+  Role.assassin, // Mosteiro Sombrio
+  Role.captain, // Fortaleza do Norte
+  Role.contessa, // Salão dos Espelhos
+  Role.duke, // Trono de Ferro
+];
+
+/// Moldura de toda a campanha: o close do personagem com o cartão de título
+/// por cima, a faixa do letterbox com a deixa e o texto embaixo. Em telas
+/// largas o close fica à esquerda, como na abertura.
+class _Stage extends StatelessWidget {
+  const _Stage({
+    required this.role,
+    required this.cue,
+    required this.title,
+    required this.children,
+    this.frozen = false,
+    this.hot = false,
+    this.band = 0.42,
+  });
+  final Role role;
+  final String cue;
+  final Widget title;
+  final List<Widget> children;
+
+  /// Congelamento do gancho: o close perde a cor.
+  final bool frozen;
+  final bool hot;
+
+  /// Fração da altura da tela que o close ocupa no celular.
+  final double band;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final shot = CloseUp(role: role, grayscale: frozen);
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
+
+    if (size.width >= 900) {
+      return Row(
+        children: [
+          Expanded(
+            flex: 11,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                shot,
+                const _Scrim(horizontal: true),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: LetterboxBar(cue: cue, hot: hot, height: 40),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            flex: 9,
+            child: SafeArea(
+              left: false,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(48, 72, 56, 40),
+                children: [
+                  title,
+                  const SizedBox(height: 32),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 480),
+                      child: content,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final bandHeight = (size.height * band).clamp(180.0, 400.0);
+    return ListView(
+      padding: EdgeInsets.only(
+        bottom: 28 + MediaQuery.paddingOf(context).bottom,
+      ),
+      children: [
+        SizedBox(
+          height: bandHeight,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              shot,
+              const _Scrim(horizontal: false),
+              Positioned(left: 20, right: 20, bottom: 18, child: title),
+            ],
+          ),
+        ),
+        LetterboxBar(cue: cue, hot: hot),
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: content,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Película sobre o close para o texto ler por cima.
+class _Scrim extends StatelessWidget {
+  const _Scrim({required this.horizontal});
+  final bool horizontal;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        begin: horizontal ? Alignment.centerLeft : Alignment.topCenter,
+        end: horizontal ? Alignment.centerRight : Alignment.bottomCenter,
+        colors: horizontal
+            ? [
+                Tv.ink.withValues(alpha: 0.0),
+                Tv.ink.withValues(alpha: 0.15),
+                Tv.ink,
+              ]
+            : [
+                Tv.ink.withValues(alpha: 0.6),
+                Tv.ink.withValues(alpha: 0.0),
+                Tv.ink.withValues(alpha: 0.45),
+                Tv.ink,
+              ],
+        stops: horizontal ? const [0, 0.75, 1] : const [0, 0.3, 0.62, 1],
+      ),
+    ),
+  );
+}
+
+/// Cartão de título: o nome em Bodoni e, se houver, uma linha embaixo.
+class _TitleCard extends StatelessWidget {
+  const _TitleCard(this.title, {this.below});
+  final String title;
+  final Widget? below;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(title, style: TvType.title(44)),
+      if (below != null) ...[const SizedBox(height: 10), below!],
+    ],
+  );
+}
+
+/// Linha de crédito só de leitura: título em itálico, texto embaixo e o fio.
+class _Credit extends StatelessWidget {
+  const _Credit(this.title, this.body);
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(vertical: 14),
+    decoration: const BoxDecoration(
+      border: Border(bottom: BorderSide(color: Tv.rule)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: TvType.name(21)),
+        const SizedBox(height: 4),
+        Text(body, style: _body),
+      ],
+    ),
+  );
+}
+
+const _body = TextStyle(fontSize: 15, height: 1.4, color: Tv.creditDim);
 
 // ------------------------------------------------------------------ intro
 
@@ -206,70 +391,268 @@ class _Intro extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (best, crowns) = record;
-    return ListView(
-      padding: const EdgeInsets.all(24),
+    return _Stage(
+      role: Role.duke,
+      cue: 'SETE CAPÍTULOS ATÉ O TRONO',
+      title: const _TitleCard('A Ascensão ao Trono'),
       children: [
-        const Icon(Icons.castle, size: 64, color: CoupColors.gold),
+        CueButton(
+          label: 'Nova campanha',
+          icon: Icons.play_arrow_rounded,
+          onPressed: onStart,
+        ),
+        if (best > 0 || crowns > 0) ...[
+          const SizedBox(height: 10),
+          Text(
+            (crowns > 0
+                    ? 'Campanhas completas: $crowns · Recorde: $best cortes'
+                    : 'Recorde: $best corte${best == 1 ? '' : 's'} '
+                          'vencida${best == 1 ? '' : 's'}')
+                .toUpperCase(),
+            style: TvType.credit(12, color: Tv.credit),
+          ),
+        ],
         const SizedBox(height: 12),
-        const Text(
-          'A Ascensão ao Trono',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+        const _Credit(
+          'Sete cortes',
+          'Atravesse 7 cortes, da Vila de Pedra ao Trono de Ferro. Cada '
+              'uma é um capítulo da temporada.',
         ),
-        const SizedBox(height: 16),
-        const _Bullet(
-          Icons.route,
-          'Atravesse 7 cortes, da Vila de Pedra ao Trono de Ferro.',
-        ),
-        const _Bullet(
-          Icons.casino,
+        const _Credit(
+          'Uma punição por partida',
           'Cada partida sorteia uma punição diferente contra você.',
         ),
-        const _Bullet(
-          Icons.auto_awesome,
-          'Bênçãos são raras: vencer as cortes 1 e 4 garante uma, e a corte '
-          '6 dá 50% de chance. Elas valem até o fim.',
+        const _Credit(
+          'Bênçãos raras',
+          'Vencer as cortes 1 e 4 garante uma, e a corte 6 dá 50% de '
+              'chance. Elas valem até o fim.',
         ),
-        _Bullet(
-          Icons.favorite,
-          'Você tem $startingLives vida extra. Perder sem vidas encerra a campanha.',
-        ),
-        const SizedBox(height: 20),
-        if (best > 0 || crowns > 0)
-          Text(
-            crowns > 0
-                ? 'Campanhas completas: $crowns · Recorde: $best cortes'
-                : 'Recorde: $best corte${best == 1 ? '' : 's'} vencida${best == 1 ? '' : 's'}',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: CoupColors.goldHigh),
-          ),
-        const SizedBox(height: 16),
-        FilledButton.icon(
-          onPressed: onStart,
-          icon: const Icon(Icons.play_arrow),
-          label: const Text('NOVA CAMPANHA'),
+        _Credit(
+          'Vida extra',
+          'Você tem $startingLives vida extra. Perder sem vidas encerra a '
+              'campanha.',
         ),
       ],
     );
   }
 }
 
-class _Bullet extends StatelessWidget {
-  const _Bullet(this.icon, this.text);
-  final IconData icon;
-  final String text;
+// ------------------------------------------------------------ próxima corte
+
+/// O capítulo a seguir: a faixa da temporada, vidas e bênçãos, e o sorteio
+/// da punição, que termina num congelamento de cena.
+class _NextCourt extends StatefulWidget {
+  const _NextCourt({super.key, required this.run, required this.onPlay});
+  final CampaignRun run;
+  final VoidCallback onPlay;
+
+  /// Sorteios já mostrados: só anima a primeira vez que cada um aparece.
+  static final Set<String> _seen = {};
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6),
-    child: Row(
+  State<_NextCourt> createState() => _NextCourtState();
+}
+
+class _NextCourtState extends State<_NextCourt>
+    with SingleTickerProviderStateMixin {
+  static const _steps = 14;
+
+  late List<Curse> _shown = _final;
+  bool _landed = true;
+  bool _started = false;
+  Timer? _timer;
+
+  /// O soco do congelamento: o nome assenta de um pouco maior para o normal.
+  late final AnimationController _freeze = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 700),
+    value: 1,
+  );
+
+  List<Curse> get _final => [for (final c in widget.run.curses) curseInfo[c]!];
+
+  String get _key =>
+      '${widget.run.seed}-${widget.run.court}-${widget.run.lives}';
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (!_NextCourt._seen.add(_key)) return;
+    if (MediaQuery.of(context).disableAnimations) {
+      HapticFeedback.heavyImpact();
+      return;
+    }
+    _landed = false;
+    _shown = _frame(0);
+    HapticFeedback.selectionClick();
+    _timer = Timer(const Duration(milliseconds: 50), () => _spin(1));
+  }
+
+  List<Curse> _frame(int step) {
+    final all = curseInfo.values.toList();
+    return [
+      for (final c in widget.run.curses) all[(step * 5 + c.index) % all.length],
+    ];
+  }
+
+  void _spin(int step) {
+    if (!mounted) return;
+    if (step >= _steps) {
+      setState(() {
+        _shown = _final;
+        _landed = true;
+      });
+      _freeze.forward(from: 0);
+      HapticFeedback.heavyImpact();
+      return;
+    }
+    setState(() => _shown = _frame(step));
+    HapticFeedback.selectionClick();
+    // Cada corte demora mais que a anterior, até parar.
+    _timer = Timer(
+      Duration(milliseconds: 50 + step * step * 3),
+      () => _spin(step + 1),
+    );
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _freeze.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final run = widget.run;
+    final court = run.currentCourt;
+    final rivals = court.bots + (run.hasCurse(CurseId.crowdedCourt) ? 1 : 0);
+    final many = run.curses.length > 1;
+    return _Stage(
+      role: _courtLead[run.court],
+      band: 0.30,
+      frozen: _landed,
+      hot: _landed,
+      cue: _landed
+          ? (many ? 'PUNIÇÕES SORTEADAS' : 'PUNIÇÃO SORTEADA')
+          : 'SORTEIO',
+      title: _TitleCard(
+        'Capítulo ${run.court + 1}',
+        below: Text(
+          court.name.toUpperCase(),
+          style: TvType.credit(13, color: Tv.credit, weight: FontWeight.w700),
+        ),
+      ),
       children: [
-        Icon(icon, size: 20, color: CoupColors.gold),
-        const SizedBox(width: 12),
+        Text(
+          '$rivals rival${rivals == 1 ? '' : 'is'}'
+                  '${court.hardBots > 0 ? ' (${court.hardBots} de elite)' : ''}'
+              .toUpperCase(),
+          style: TvType.credit(12),
+        ),
+        const SizedBox(height: 12),
+        for (final (i, c) in _shown.indexed)
+          _CurseLine(
+            curse: c,
+            drawn: curseInfo[run.curses[i]]!,
+            landed: _landed,
+            freeze: _freeze,
+          ),
+        const SizedBox(height: 16),
+        CueButton(
+          label: 'Enfrentar a corte',
+          icon: Icons.gavel,
+          onPressed: widget.onPlay,
+        ),
+        const SizedBox(height: 32),
+        _CourtStrip(run: run),
+        const SizedBox(height: 8),
+        _RunStatus(run: run),
+      ],
+    );
+  }
+}
+
+/// Uma punição como linha de crédito: o papel à esquerda, o nome à direita.
+/// Enquanto sorteia, os nomes cortam secos em cinza; ao parar, a cena
+/// congela com o fio em carmim.
+class _CurseLine extends StatelessWidget {
+  const _CurseLine({
+    required this.curse,
+    required this.drawn,
+    required this.landed,
+    required this.freeze,
+  });
+
+  /// O que está na tela agora (muda a cada corte do sorteio).
+  final Curse curse;
+
+  /// A punição sorteada: a descrição dela já reserva o espaço, invisível,
+  /// para nada pular quando a cena congela.
+  final Curse drawn;
+  final bool landed;
+  final Animation<double> freeze;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(vertical: 16),
+    decoration: BoxDecoration(
+      border: Border(top: BorderSide(color: landed ? Tv.carmine : Tv.rule)),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 92,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                landed ? 'PUNIÇÃO' : 'SORTEANDO...',
+                style: TvType.credit(
+                  11,
+                  color: landed ? Tv.credit : Tv.creditMuted,
+                  weight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Icon(
+                curse.icon,
+                size: 26,
+                color: landed ? Tv.carmine : Tv.creditMuted,
+              ),
+            ],
+          ),
+        ),
         Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(color: CoupColors.textSecondary),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AnimatedBuilder(
+                animation: freeze,
+                builder: (context, child) => Transform.scale(
+                  alignment: Alignment.centerLeft,
+                  scale:
+                      1 +
+                      0.12 * (1 - Curves.easeOutExpo.transform(freeze.value)),
+                  child: child,
+                ),
+                child: Text(
+                  curse.name,
+                  style: TvType.name(
+                    26,
+                    color: landed ? Tv.credit : Tv.creditMuted,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Opacity(
+                opacity: landed ? 1 : 0,
+                child: Text(drawn.description, style: _body),
+              ),
+            ],
           ),
         ),
       ],
@@ -277,356 +660,190 @@ class _Bullet extends StatelessWidget {
   );
 }
 
-// ------------------------------------------------------------ próxima corte
-
-class _NextCourt extends StatelessWidget {
-  const _NextCourt({super.key, required this.run, required this.onPlay});
+/// Vidas e bênçãos acumuladas.
+class _RunStatus extends StatelessWidget {
+  const _RunStatus({required this.run});
   final CampaignRun run;
-  final VoidCallback onPlay;
 
   @override
   Widget build(BuildContext context) {
-    final court = run.currentCourt;
-    final rivals = court.bots + (run.hasCurse(CurseId.crowdedCourt) ? 1 : 0);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+    final lives = run.lives;
+    return Wrap(
+      spacing: 20,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        _RunHeader(run: run),
-        const SizedBox(height: 12),
-        _CourtPath(run: run),
-        const SizedBox(height: 16),
-        Text(
-          court.name.toUpperCase(),
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 20,
-            letterSpacing: 2,
-            fontWeight: FontWeight.w900,
-            color: CoupColors.goldHigh,
-          ),
-        ),
-        Text(
-          '$rivals rival${rivals == 1 ? '' : 'is'}'
-          '${court.hardBots > 0 ? ' (${court.hardBots} de elite)' : ''} · '
-          '${run.curses.length == 1 ? 'punição sorteada' : 'punições sorteadas'}',
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: CoupColors.textSecondary),
-        ),
-        const SizedBox(height: 14),
-        for (final c in run.curses)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _CurseReveal(
-              curse: curseInfo[c]!,
-              revealKey: '${run.seed}-${run.court}-${run.lives}-${c.name}',
+        Semantics(
+          label: lives == 0
+              ? 'Última vida'
+              : '$lives vida${lives == 1 ? '' : 's'} extra',
+          excludeSemantics: true,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < 1 + lives; i++)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 2),
+                    child: Icon(Icons.favorite, size: 16, color: Tv.credit),
+                  ),
+                const SizedBox(width: 6),
+                Text(
+                  lives == 0
+                      ? 'ÚLTIMA VIDA'
+                      : '$lives VIDA${lives == 1 ? '' : 'S'} EXTRA',
+                  style: TvType.credit(12, color: Tv.credit),
+                ),
+              ],
             ),
           ),
-        const SizedBox(height: 8),
-        FilledButton.icon(
-          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-          onPressed: onPlay,
-          icon: const Icon(Icons.gavel),
-          label: const Text('ENFRENTAR A CORTE'),
         ),
+        for (final b in run.blessings.toSet())
+          Tooltip(
+            message:
+                '${blessingInfo[b]!.name}: ${blessingInfo[b]!.description}',
+            triggerMode: TooltipTriggerMode.tap,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(blessingInfo[b]!.icon, size: 16, color: Tv.proven),
+                  const SizedBox(width: 6),
+                  Text(
+                    (run.count(b) > 1
+                            ? '${blessingInfo[b]!.name} ×${run.count(b)}'
+                            : blessingInfo[b]!.name)
+                        .toUpperCase(),
+                    style: TvType.credit(12, color: Tv.credit),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }
 }
 
-/// Vidas e bênçãos acumuladas.
-class _RunHeader extends StatelessWidget {
-  const _RunHeader({required this.run});
+/// A temporada em faixa: os sete capítulos, com as bênçãos marcadas.
+class _CourtStrip extends StatelessWidget {
+  const _CourtStrip({required this.run});
   final CampaignRun run;
 
   @override
-  Widget build(BuildContext context) => Row(
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      for (var i = 0; i < 1 + run.lives; i++)
-        const Padding(
-          padding: EdgeInsets.only(right: 2),
-          child: Icon(Icons.favorite, color: CoupColors.error, size: 20),
-        ),
-      const SizedBox(width: 8),
-      Expanded(
-        child: Wrap(
-          alignment: WrapAlignment.end,
-          spacing: 4,
-          runSpacing: 4,
-          children: [
-            for (final b in run.blessings.toSet())
-              Tooltip(
-                message:
-                    '${blessingInfo[b]!.name}: ${blessingInfo[b]!.description}',
-                triggerMode: TooltipTriggerMode.tap,
-                child: Chip(
-                  visualDensity: VisualDensity.compact,
-                  avatar: Icon(
-                    blessingInfo[b]!.icon,
-                    size: 14,
-                    color: CoupColors.success,
-                  ),
-                  label: Text(
-                    run.count(b) > 1
-                        ? '${blessingInfo[b]!.name} ×${run.count(b)}'
-                        : blessingInfo[b]!.name,
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                ),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < courts.length; i++)
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(right: i == courts.length - 1 ? 0 : 4),
+                child: _cell(i),
               ),
-          ],
-        ),
+            ),
+        ],
+      ),
+      const SizedBox(height: 10),
+      Wrap(
+        spacing: 18,
+        runSpacing: 6,
+        children: const [
+          _Legend(Icons.auto_awesome, 'Bênção garantida'),
+          _Legend(Icons.casino, '50% de chance de bênção'),
+        ],
       ),
     ],
   );
-}
 
-/// Caminho das sete cortes: vencidas, atual e por vir.
-class _CourtPath extends StatelessWidget {
-  const _CourtPath({required this.run});
-  final CampaignRun run;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 64,
-      child: Row(
-        children: [
-          for (var i = 0; i < courts.length; i++) ...[
-            if (i > 0)
-              Expanded(
-                child: Container(
-                  height: 2,
-                  color: i <= run.court ? CoupColors.gold : CoupColors.border,
-                ),
-              ),
-            _node(i),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _node(int i) {
+  Widget _cell(int i) {
     final done = i < run.court;
     final current = i == run.court;
-    final last = i == courts.length - 1;
     final reward = blessingRewardAt(i);
-    final node = _circle(i, done, current, last);
-    if (reward == BlessingReward.none) {
-      return Tooltip(message: courts[i].name, child: node);
-    }
-    final sure = reward == BlessingReward.sure;
+    final color = current
+        ? Tv.credit
+        : done
+        ? Tv.creditDim
+        : Tv.creditMuted;
+    final rewardText = switch (reward) {
+      BlessingReward.sure => ' · bênção garantida',
+      BlessingReward.chance => ' · 50% de chance de bênção',
+      BlessingReward.none => '',
+    };
     return Tooltip(
       message:
-          '${courts[i].name} · '
-          '${sure ? 'bênção garantida' : '50% de chance de bênção'}',
-      child: Stack(
-        clipBehavior: Clip.none,
+          'Capítulo ${i + 1}: ${courts[i].name}'
+          '${done ? ' (vencida)' : ''}$rewardText',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          node,
-          Positioned(
-            right: -6,
-            top: -6,
-            child: Container(
-              width: 18,
-              height: 18,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: done ? CoupColors.surface : CoupColors.redDeep,
-                border: Border.all(color: CoupColors.goldHigh, width: 1),
-              ),
-              child: Icon(
-                sure ? Icons.auto_awesome : Icons.casino,
-                size: 11,
-                color: CoupColors.goldHigh,
-              ),
+          Container(
+            height: current ? 3 : 1,
+            color: current
+                ? Tv.credit
+                : done
+                ? Tv.creditDim
+                : Tv.rule,
+          ),
+          SizedBox(
+            height: 40,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '${i + 1}',
+                  style: TvType.figure(current ? 30 : 20, color: color),
+                ),
+                if (done) ...[
+                  const SizedBox(width: 2),
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 2),
+                    child: Icon(Icons.check, size: 13, color: Tv.creditDim),
+                  ),
+                ],
+              ],
             ),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 16,
+            child: switch (reward) {
+              BlessingReward.sure => const Icon(
+                Icons.auto_awesome,
+                size: 16,
+                color: Tv.proven,
+              ),
+              BlessingReward.chance => const Icon(
+                Icons.casino,
+                size: 16,
+                color: Tv.proven,
+              ),
+              BlessingReward.none => null,
+            },
           ),
         ],
       ),
     );
   }
-
-  Widget _circle(int i, bool done, bool current, bool last) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      width: current ? 40 : 30,
-      height: current ? 40 : 30,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: done
-            ? CoupColors.gold
-            : current
-            ? CoupColors.surfaceHigh
-            : CoupColors.surface,
-        border: Border.all(
-          color: done || current ? CoupColors.goldHigh : CoupColors.border,
-          width: current ? 2.5 : 1,
-        ),
-        boxShadow: current
-            ? [
-                BoxShadow(
-                  color: CoupColors.gold.withValues(alpha: 0.5),
-                  blurRadius: 12,
-                ),
-              ]
-            : null,
-      ),
-      child: Center(
-        child: done
-            ? const Icon(Icons.check, size: 16, color: Colors.black)
-            : last
-            ? Icon(
-                Icons.castle,
-                size: current ? 20 : 15,
-                color: current ? CoupColors.goldHigh : CoupColors.textMuted,
-              )
-            : Text(
-                '${i + 1}',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: current ? CoupColors.goldHigh : CoupColors.textMuted,
-                ),
-              ),
-      ),
-    );
-  }
 }
 
-/// Sorteio da punição: a carta gira entre as punições possíveis, desacelera
-/// e para na sorteada. Só anima a primeira vez que cada sorteio aparece.
-class _CurseReveal extends StatefulWidget {
-  const _CurseReveal({required this.curse, required this.revealKey});
-  final Curse curse;
-  final String revealKey;
-
-  static final Set<String> _seen = {};
+class _Legend extends StatelessWidget {
+  const _Legend(this.icon, this.text);
+  final IconData icon;
+  final String text;
 
   @override
-  State<_CurseReveal> createState() => _CurseRevealState();
-}
-
-class _CurseRevealState extends State<_CurseReveal> {
-  late Curse _shown;
-  bool _landed = false;
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _shown = widget.curse;
-    if (_CurseReveal._seen.add(widget.revealKey)) {
-      _landed = false;
-      _spin(0);
-    } else {
-      _landed = true;
-    }
-  }
-
-  void _spin(int step) {
-    const steps = 14;
-    if (step >= steps) {
-      setState(() {
-        _shown = widget.curse;
-        _landed = true;
-      });
-      HapticFeedback.heavyImpact();
-      return;
-    }
-    final all = curseInfo.values.toList();
-    setState(
-      () => _shown = all[(step * 5 + widget.curse.id.index) % all.length],
-    );
-    HapticFeedback.selectionClick();
-    // Desacelera como uma roleta.
-    _timer = Timer(Duration(milliseconds: 50 + step * step * 3), () {
-      if (mounted) _spin(step + 1);
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = _shown;
-    return AnimatedScale(
-      scale: _landed ? 1 : 0.96,
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.elasticOut,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: CoupColors.redDeep.withValues(alpha: _landed ? 0.35 : 0.15),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: CoupColors.error.withValues(alpha: _landed ? 0.8 : 0.3),
-            width: _landed ? 1.5 : 1,
-          ),
-          boxShadow: _landed
-              ? [
-                  BoxShadow(
-                    color: CoupColors.error.withValues(alpha: 0.25),
-                    blurRadius: 18,
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: CoupColors.error.withValues(alpha: 0.15),
-              ),
-              child: Icon(c.icon, color: CoupColors.error, size: 26),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _landed ? 'PUNIÇÃO' : 'SORTEANDO...',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      letterSpacing: 2,
-                      fontWeight: FontWeight.w800,
-                      color: CoupColors.textMuted,
-                    ),
-                  ),
-                  Text(
-                    c.name,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  AnimatedOpacity(
-                    duration: const Duration(milliseconds: 250),
-                    opacity: _landed ? 1 : 0.35,
-                    child: Text(
-                      c.description,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        color: CoupColors.textSecondary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(icon, size: 14, color: Tv.proven),
+      const SizedBox(width: 6),
+      Text(text.toUpperCase(), style: TvType.credit(11)),
+    ],
+  );
 }
 
 // ---------------------------------------------------------------- bênção
@@ -637,53 +854,31 @@ class _BlessingChoice extends StatelessWidget {
   final ValueChanged<BlessingId> onChoose;
 
   @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      children: [
-        _RunHeader(run: run),
-        const SizedBox(height: 20),
-        const Icon(Icons.emoji_events, size: 48, color: CoupColors.goldHigh),
-        const SizedBox(height: 8),
-        Text(
-          '${run.currentCourt.name} conquistada!',
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+  Widget build(BuildContext context) => _Stage(
+    role: Role.contessa,
+    cue: 'FIM DO CAPÍTULO ${run.court + 1}',
+    title: _TitleCard('${run.currentCourt.name} conquistada!'),
+    children: [
+      _RunStatus(run: run),
+      const SizedBox(height: 6),
+      Text(
+        'Escolha uma bênção. Ela vale até o fim da campanha.',
+        style: _body.copyWith(fontSize: 16, color: Tv.credit),
+      ),
+      const SizedBox(height: 10),
+      for (final id in run.offer)
+        _BlessingLine(
+          blessing: blessingInfo[id]!,
+          owned: run.count(id),
+          onTap: () => onChoose(id),
         ),
-        const Text(
-          'Escolha uma bênção. Ela vale até o fim da campanha.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: CoupColors.textSecondary),
-        ),
-        const SizedBox(height: 18),
-        for (final (i, id) in run.offer.indexed)
-          TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: 1),
-            duration: Duration(milliseconds: 400 + i * 150),
-            curve: Curves.easeOutBack,
-            builder: (_, v, child) => Opacity(
-              opacity: v.clamp(0, 1),
-              child: Transform.translate(
-                offset: Offset(0, 30 * (1 - v)),
-                child: child,
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _BlessingCard(
-                blessing: blessingInfo[id]!,
-                owned: run.count(id),
-                onTap: () => onChoose(id),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
+    ],
+  );
 }
 
-class _BlessingCard extends StatelessWidget {
-  const _BlessingCard({
+/// Bênção oferecida como linha de crédito tocável.
+class _BlessingLine extends StatelessWidget {
+  const _BlessingLine({
     required this.blessing,
     required this.owned,
     required this.onTap,
@@ -693,52 +888,37 @@ class _BlessingCard extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: CoupColors.surface,
-    borderRadius: BorderRadius.circular(16),
+  Widget build(BuildContext context) => Semantics(
+    button: true,
     child: InkWell(
-      borderRadius: BorderRadius.circular(16),
       onTap: onTap,
+      splashColor: Tv.carmine.withValues(alpha: 0.18),
+      highlightColor: Tv.carmine.withValues(alpha: 0.08),
       child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: CoupColors.success.withValues(alpha: 0.6)),
+        constraints: const BoxConstraints(minHeight: 72),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Tv.rule)),
         ),
         child: Row(
           children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: CoupColors.success.withValues(alpha: 0.15),
-              ),
-              child: Icon(blessing.icon, color: CoupColors.success, size: 26),
-            ),
-            const SizedBox(width: 14),
+            Icon(blessing.icon, size: 24, color: Tv.proven),
+            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     owned > 0 ? '${blessing.name} (+1)' : blessing.name,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: TvType.name(24),
                   ),
-                  Text(
-                    blessing.description,
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      color: CoupColors.textSecondary,
-                    ),
-                  ),
+                  const SizedBox(height: 4),
+                  Text(blessing.description, style: _body),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: CoupColors.textMuted),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right, color: Tv.creditMuted),
           ],
         ),
       ),
@@ -748,6 +928,7 @@ class _BlessingCard extends StatelessWidget {
 
 // ------------------------------------------------------------------ fim
 
+/// Cartão de fim de temporada, com os capítulos que passaram nos créditos.
 class _Finished extends StatelessWidget {
   const _Finished({super.key, required this.run, required this.onRestart});
   final CampaignRun run;
@@ -757,50 +938,78 @@ class _Finished extends StatelessWidget {
   Widget build(BuildContext context) {
     final won = run.status == RunStatus.won;
     final cleared = run.history.where((h) => h.won).length;
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        Icon(
-          won ? Icons.castle : Icons.heart_broken,
-          size: 64,
-          color: won ? CoupColors.goldHigh : CoupColors.error,
-        ),
-        const SizedBox(height: 12),
-        Text(
-          won ? 'O Trono é seu!' : 'Sua campanha terminou',
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 6),
-        Text(
+    return _Stage(
+      role: won ? Role.duke : Role.assassin,
+      frozen: !won,
+      hot: !won,
+      cue: 'FIM DA TEMPORADA',
+      title: _TitleCard(
+        won ? 'O Trono é seu!' : 'Sua campanha terminou',
+        below: Text(
           won
               ? 'Você venceu as ${courts.length} cortes.'
               : 'Caiu em ${run.currentCourt.name}, depois de vencer '
                     '$cleared corte${cleared == 1 ? '' : 's'}.',
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: CoupColors.textSecondary),
+          style: _body.copyWith(color: Tv.credit),
         ),
-        const SizedBox(height: 20),
-        for (final h in run.history)
-          ListTile(
-            dense: true,
-            leading: Icon(
-              h.won ? Icons.check_circle : Icons.cancel,
-              color: h.won ? CoupColors.success : CoupColors.error,
-            ),
-            title: Text(courts[h.court].name),
-            subtitle: Text(
-              h.curses.map((c) => curseInfo[c]!.name).join(' + '),
-              style: const TextStyle(color: CoupColors.textSecondary),
-            ),
-          ),
-        const SizedBox(height: 16),
-        FilledButton.icon(
+      ),
+      children: [
+        for (final h in run.history) _HistoryLine(result: h),
+        const SizedBox(height: 28),
+        CueButton(
+          label: 'Nova campanha',
+          icon: Icons.replay,
           onPressed: onRestart,
-          icon: const Icon(Icons.replay),
-          label: const Text('NOVA CAMPANHA'),
         ),
       ],
     );
   }
+}
+
+class _HistoryLine extends StatelessWidget {
+  const _HistoryLine({required this.result});
+  final CourtResult result;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(vertical: 12),
+    decoration: const BoxDecoration(
+      border: Border(bottom: BorderSide(color: Tv.rule)),
+    ),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 36,
+          child: Text('${result.court + 1}', style: TvType.figure(20)),
+        ),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(courts[result.court].name, style: TvType.name(19)),
+              const SizedBox(height: 3),
+              Text(
+                result.curses
+                    .map((c) => curseInfo[c]!.name)
+                    .join(' + ')
+                    .toUpperCase(),
+                style: TvType.credit(11),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Icon(
+          result.won ? Icons.check : Icons.close,
+          size: 18,
+          color: result.won ? Tv.proven : Tv.carmine,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          result.won ? 'VENCEU' : 'CAIU',
+          style: TvType.credit(11, color: Tv.credit, weight: FontWeight.w700),
+        ),
+      ],
+    ),
+  );
 }

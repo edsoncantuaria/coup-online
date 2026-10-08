@@ -5,8 +5,9 @@ import '../../engine/coup_engine.dart';
 import '../../engine/models.dart';
 import '../../game/game_controller.dart';
 import '../theme.dart';
-import 'arena.dart';
 import 'common.dart';
+import 'stage.dart';
+import 'tv.dart';
 
 /// Abre a folha de ações. Fora da sua vez ela vira uma referência rápida
 /// (tudo desabilitado), para planejar a próxima jogada.
@@ -14,11 +15,7 @@ Future<void> showActionSheet(BuildContext context, GameController c) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: CoupColors.secondary,
     showDragHandle: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
     builder: (_) => ListenableBuilder(
       listenable: c,
       builder: (ctx, _) => _ActionSheet(controller: c),
@@ -73,7 +70,6 @@ class _ActionSheet extends StatelessWidget {
             ? targets.first
             : await showModalBottomSheet<Player>(
                 context: context,
-                backgroundColor: CoupColors.secondary,
                 showDragHandle: true,
                 builder: (_) => _TargetSheet(type: t, targets: targets),
               );
@@ -83,11 +79,12 @@ class _ActionSheet extends StatelessWidget {
       c.sendAction(GameAction(type: t, source: me.id, target: target?.id));
     }
 
-    Widget tile(ActionType t, String hint, {Role? role}) {
+    Widget tile(ActionType t, String hint, {Role? role, String? figure}) {
       final why = whyNot(t);
       final bluff = role != null && !me.aliveRoles.contains(role);
       return _ActionTile(
         type: t,
+        figure: figure,
         hint: why ?? hint,
         role: role,
         bluff: myTurn && bluff && why == null,
@@ -96,73 +93,74 @@ class _ActionSheet extends StatelessWidget {
       );
     }
 
+    final general = [
+      tile(ActionType.income, 'Pega uma moeda', figure: '+1'),
+      tile(ActionType.foreignAid, 'O Duque pode bloquear', figure: '+2'),
+      tile(ActionType.coup, 'Sem defesa possível', figure: '−$coupCost'),
+    ];
+    final roles = [
+      tile(ActionType.tax, 'Duque · +3 moedas', role: Role.duke),
+      tile(ActionType.steal, 'Capitão · leva $steal', role: Role.captain),
+      tile(ActionType.assassinate, 'Assassino · custa 3', role: Role.assassin),
+      tile(ActionType.exchange, 'Embaixador · troca 2', role: Role.ambassador),
+    ];
+
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
         child: LayoutBuilder(
           builder: (context, box) {
-            final cols = box.maxWidth >= 560 ? 4 : 2;
-            const gap = 8.0;
-            final w = (box.maxWidth - gap * (cols - 1)) / cols;
-            Widget grid(List<Widget> tiles) => Wrap(
-              spacing: gap,
-              runSpacing: gap,
-              children: [for (final t in tiles) SizedBox(width: w, child: t)],
+            final two = box.maxWidth >= 640;
+            final head = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  myTurn ? 'Sua jogada.' : 'O roteiro.',
+                  style: TvType.title(34),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  myTurn
+                      ? me.coins >= 10
+                            ? 'Com 10 moedas o Golpe é obrigatório.'
+                            : 'Declare qualquer personagem, mesmo sem ter.'
+                      : 'Não é sua vez. Use para planejar a próxima jogada.',
+                  style: TextStyle(
+                    fontFamily: TvType.sans,
+                    fontSize: 14,
+                    color: myTurn && me.coins >= 10 ? Tv.carmine : Tv.creditDim,
+                  ),
+                ),
+              ],
+            );
+            final generalCol = Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [const _GroupLabel('Gerais'), ...general],
+            );
+            final rolesCol = Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [const _GroupLabel('Personagens'), ...roles],
             );
             return Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  myTurn ? 'Sua jogada' : 'Ações',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  myTurn
-                      ? me.coins >= 10
-                            ? 'Com 10 moedas o Golpe é obrigatório.'
-                            : 'Você pode declarar qualquer personagem, mesmo sem ter.'
-                      : 'Não é sua vez. Use para planejar a próxima jogada.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: myTurn && me.coins >= 10
-                        ? CoupColors.error
-                        : CoupColors.textSecondary,
-                  ),
-                ),
+                head,
                 const SizedBox(height: 16),
-                const _GroupLabel('Gerais'),
-                grid([
-                  tile(ActionType.income, '+1 moeda'),
-                  tile(ActionType.foreignAid, '+2 · Duque bloqueia'),
-                  tile(ActionType.coup, '-$coupCost · sem defesa'),
-                ]),
-                const SizedBox(height: 12),
-                const _GroupLabel('Personagens'),
-                grid([
-                  tile(ActionType.tax, 'Duque · +3', role: Role.duke),
-                  tile(
-                    ActionType.steal,
-                    'Capitão · +$steal',
-                    role: Role.captain,
-                  ),
-                  tile(
-                    ActionType.assassinate,
-                    'Assassino · -3',
-                    role: Role.assassin,
-                  ),
-                  tile(
-                    ActionType.exchange,
-                    'Embaixador',
-                    role: Role.ambassador,
-                  ),
-                ]),
+                if (two)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: rolesCol),
+                      const SizedBox(width: 28),
+                      Expanded(child: generalCol),
+                    ],
+                  )
+                else ...[
+                  rolesCol,
+                  const SizedBox(height: 18),
+                  generalCol,
+                ],
               ],
             );
           },
@@ -188,19 +186,13 @@ class _GroupLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 6, left: 2),
-    child: Text(
-      text.toUpperCase(),
-      style: const TextStyle(
-        fontSize: 10,
-        letterSpacing: 1.6,
-        fontWeight: FontWeight.w800,
-        color: CoupColors.textMuted,
-      ),
-    ),
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Text(text.toUpperCase(), style: TvType.credit(11)),
   );
 }
 
+/// Uma linha do roteiro: o close do personagem (ou o valor em moedas), o
+/// nome da ação em Bodoni e o crédito do que ela faz.
 class _ActionTile extends StatelessWidget {
   const _ActionTile({
     required this.type,
@@ -208,6 +200,7 @@ class _ActionTile extends StatelessWidget {
     required this.enabled,
     required this.onTap,
     this.role,
+    this.figure,
     this.bluff = false,
   });
 
@@ -216,74 +209,69 @@ class _ActionTile extends StatelessWidget {
   final bool enabled;
   final VoidCallback onTap;
   final Role? role;
+  final String? figure;
   final bool bluff;
 
   @override
   Widget build(BuildContext context) {
-    final style = role != null ? roleStyle(role!) : null;
-    final accent = style?.accent ?? CoupColors.goldHigh;
+    final accent = role != null ? roleStyle(role!).accent : Tv.coin;
     return AnimatedOpacity(
-      duration: const Duration(milliseconds: 200),
-      opacity: enabled ? 1 : 0.45,
-      child: Material(
-        color: style?.top.withValues(alpha: 0.35) ?? CoupColors.surfaceHigh,
-        borderRadius: BorderRadius.circular(14),
+      duration: const Duration(milliseconds: 160),
+      opacity: enabled ? 1 : 0.4,
+      child: Semantics(
+        button: true,
+        enabled: enabled,
         child: InkWell(
-          borderRadius: BorderRadius.circular(14),
           onTap: enabled ? onTap : null,
+          splashColor: Tv.carmine.withValues(alpha: 0.18),
+          highlightColor: Tv.carmine.withValues(alpha: 0.08),
           child: Container(
-            constraints: const BoxConstraints(minHeight: 58),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: accent.withValues(alpha: 0.4)),
+            constraints: const BoxConstraints(minHeight: 64),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Tv.rule)),
             ),
             child: Row(
               children: [
-                Icon(actionIcon(type), size: 22, color: accent),
-                const SizedBox(width: 10),
+                SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: role != null
+                      ? CloseUp(role: role!, zoom: 1.3)
+                      : Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            figure ?? '',
+                            style: TvType.figure(22, color: Tv.coin),
+                          ),
+                        ),
+                ),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      Text(shortActionLabel(type), style: TvType.name(22)),
+                      const SizedBox(height: 2),
                       Text(
-                        shortActionLabel(type),
+                        hint.toUpperCase(),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      Text(
-                        hint,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: CoupColors.textSecondary,
-                        ),
+                        style: TvType.credit(10.5, color: accent),
                       ),
                     ],
                   ),
                 ),
                 if (bluff)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 5,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      color: CoupColors.bluff.withValues(alpha: 0.25),
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                    child: const Text(
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Text(
                       'BLEFE',
-                      style: TextStyle(
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.w900,
-                        color: CoupColors.bluff,
+                      style: TvType.credit(
+                        11,
+                        color: Tv.bluff,
+                        weight: FontWeight.w700,
                       ),
                     ),
                   ),
@@ -303,32 +291,23 @@ class _TargetSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SafeArea(
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            '${shortActionLabel(type)}: escolha o alvo',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-          ),
+          Text('${shortActionLabel(type)}: quem?', style: TvType.title(30)),
           const SizedBox(height: 12),
           for (final p in targets)
-            Card(
-              color: CoupColors.surface,
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                leading: PlayerAvatar(player: p, size: 40),
-                title: Text(p.name),
-                subtitle: Text(
-                  '${p.influence} influência${p.influence > 1 ? 's' : ''}',
-                  style: const TextStyle(color: CoupColors.textSecondary),
-                ),
-                trailing: CoinBadge(coins: p.coins),
-                onTap: () => Navigator.of(context).pop(p),
-              ),
+            CreditLine(
+              title: p.name,
+              size: 24,
+              credit:
+                  '${p.influence} influência${p.influence > 1 ? 's' : ''} · '
+                  '${p.coins} moeda${p.coins == 1 ? '' : 's'}',
+              trailing: PlayerAvatar(player: p, size: 40),
+              onTap: () => Navigator.of(context).pop(p),
             ),
         ],
       ),

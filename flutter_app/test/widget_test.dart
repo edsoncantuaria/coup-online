@@ -19,19 +19,19 @@ void main() {
     await tester.pumpWidget(const CoupApp());
     await tester.pump();
     await tester.pump(const Duration(seconds: 2));
-    expect(find.text('INTRIGA'), findsOneWidget);
-    expect(find.text('CAMPANHA'), findsOneWidget);
-    expect(find.text('ONLINE'), findsOneWidget);
-    expect(find.text('COMO JOGAR'), findsOneWidget);
+    expect(find.text('Intriga'), findsOneWidget);
+    expect(find.text('COMEÇAR A CAMPANHA'), findsOneWidget);
+    expect(find.text('Online'), findsOneWidget);
+    expect(find.text('Como jogar'), findsOneWidget);
 
     // Partida rápida abre as opções e começa a partida.
-    await tester.tap(find.text('PARTIDA RÁPIDA'));
+    await tester.tap(find.text('Partida rápida'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.text('DIFICULDADE'), findsOneWidget);
     await tester.tap(find.text('Difícil'));
     await tester.pump();
-    expect(find.text('Contra bots · Difícil'), findsOneWidget);
+    expect(find.textContaining('BOTS · DIFÍCIL'), findsOneWidget);
     await tester.ensureVisible(find.text('JOGAR'));
     await tester.tap(find.text('JOGAR'));
     await tester.pump();
@@ -48,7 +48,7 @@ void main() {
       await tester.pumpWidget(const CoupApp());
       await tester.pump(const Duration(seconds: 2));
       expect(tester.takeException(), isNull);
-      expect(find.text('INTRIGA'), findsOneWidget);
+      expect(find.text('Intriga'), findsOneWidget);
     }
     tester.view.reset();
   });
@@ -77,19 +77,19 @@ void main() {
 
         for (
           var i = 0;
-          i < 3000 && find.text('Jogar de novo').evaluate().isEmpty;
+          i < 3000 && find.text('JOGAR DE NOVO').evaluate().isEmpty;
           i++
         ) {
           await tester.pump(const Duration(milliseconds: 200));
         }
-        expect(find.text('Jogar de novo'), findsOneWidget);
+        expect(find.text('JOGAR DE NOVO'), findsOneWidget);
         expect(tester.takeException(), isNull);
 
-        await tester.ensureVisible(find.text('Jogar de novo'));
+        await tester.ensureVisible(find.text('JOGAR DE NOVO'));
         await tester.pump();
-        await tester.tap(find.text('Jogar de novo'));
+        await tester.tap(find.text('JOGAR DE NOVO'));
         await tester.pump(const Duration(seconds: 1));
-        expect(find.text('Jogar de novo'), findsNothing);
+        expect(find.text('JOGAR DE NOVO'), findsNothing);
 
         await tester.pumpWidget(const SizedBox());
       },
@@ -138,11 +138,11 @@ void main() {
     await tester.tap(find.text('AGIR'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
-    expect(find.text('Sua jogada'), findsOneWidget);
+    expect(find.text('Sua jogada.'), findsOneWidget);
     await tester.tap(find.text('Renda'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
-    expect(find.text('Sua jogada'), findsNothing);
+    expect(find.text('Sua jogada.'), findsNothing);
     expect(controller.me!.coins, before + 1);
     expect(tester.takeException(), isNull);
 

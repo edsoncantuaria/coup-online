@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -11,6 +9,7 @@ import '../theme.dart';
 import 'action_sheet.dart';
 import 'common.dart';
 import 'influence_card.dart';
+import 'tv.dart';
 
 /// Painel do jogador local, enxuto: identidade e moedas, a mão e um botão
 /// "Agir" que abre as ações. Decisões de resposta (desafiar, bloquear,
@@ -83,28 +82,21 @@ class _MyPanelState extends State<MyPanel> {
           ),
           child: prompt?.child ?? const SizedBox(width: double.infinity),
         ),
-        Container(
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
           decoration: BoxDecoration(
-            color: CoupColors.secondary,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+            color: Tv.ink,
             border: Border(
               top: BorderSide(
-                color: decide ? CoupColors.gold : CoupColors.border,
-                width: decide ? 1.5 : 1,
+                color: decide ? Tv.carmine : Tv.rule,
+                width: decide ? 2 : 1,
               ),
             ),
-            boxShadow: const [
-              BoxShadow(
-                color: Colors.black54,
-                blurRadius: 16,
-                offset: Offset(0, -4),
-              ),
-            ],
           ),
           child: SafeArea(
             top: false,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               child: Row(
                 children: [
                   Expanded(child: _identity(s, me)),
@@ -140,23 +132,19 @@ class _MyPanelState extends State<MyPanel> {
     children: [
       Row(
         children: [
-          PlayerAvatar(
-            player: me,
-            size: 30,
-            ringColor: s.currentPlayer?.id == me.id ? CoupColors.gold : null,
+          Flexible(
+            child: Text(
+              me.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TvType.name(18),
+            ),
           ),
           if (widget.trailing != null) ...[
-            const SizedBox(width: 4),
+            const SizedBox(width: 6),
             widget.trailing!,
           ],
         ],
-      ),
-      const SizedBox(height: 4),
-      Text(
-        me.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
       ),
       const SizedBox(height: 6),
       CoinBadge(coins: me.coins, large: true),
@@ -212,7 +200,7 @@ class _MyPanelState extends State<MyPanel> {
             buttons: [
               _Btn(
                 'Desafiar',
-                CoupColors.red,
+                Tv.carmine,
                 () => c.sendResponse(ResponseType.challenge),
               ),
               _Btn('Acreditar', null, () => c.sendResponse(ResponseType.pass)),
@@ -234,7 +222,7 @@ class _MyPanelState extends State<MyPanel> {
               buttons: [
                 _Btn(
                   'Desafiar',
-                  CoupColors.red,
+                  Tv.carmine,
                   () => c.sendResponse(ResponseType.challenge),
                 ),
                 _Btn('Aceitar', null, () => c.sendResponse(ResponseType.pass)),
@@ -258,9 +246,7 @@ class _MyPanelState extends State<MyPanel> {
               for (final r in roles)
                 _Btn(
                   roleLabel(r),
-                  me.aliveRoles.contains(r)
-                      ? CoupColors.info
-                      : CoupColors.bluff,
+                  me.aliveRoles.contains(r) ? Tv.cue : Tv.bluff,
                   () => c.sendResponse(ResponseType.block, r),
                   icon: Icons.shield,
                 ),
@@ -273,7 +259,7 @@ class _MyPanelState extends State<MyPanel> {
           key: ValueKey(k),
           child: _PromptBar(
             timer: timer,
-            accent: CoupColors.error,
+            accent: Tv.carmine,
             title: 'Você perde uma influência',
             subtitle: 'Toque na carta que vai revelar.',
             buttons: const [],
@@ -322,11 +308,8 @@ class _MyPanelState extends State<MyPanel> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    i < me.influence ? 'sua' : 'nova',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: CoupColors.textMuted,
-                    ),
+                    i < me.influence ? 'SUA' : 'NOVA',
+                    style: TvType.credit(10),
                   ),
                 ],
               ),
@@ -335,7 +318,7 @@ class _MyPanelState extends State<MyPanel> {
         buttons: [
           _Btn(
             'Manter ${_pick.length}/$need',
-            CoupColors.gold,
+            Tv.carmine,
             _pick.length == need
                 ? () => c.confirmExchange(_pick.map((i) => pool[i]).toList())
                 : null,
@@ -348,7 +331,9 @@ class _MyPanelState extends State<MyPanel> {
 
 // ------------------------------------------------------------- act button
 
-class _ActButton extends StatefulWidget {
+/// O botão de deixa: um bloco carmim "AGIR" na sua vez, um contorno
+/// "AÇÕES" fora dela. O relógio corre como uma barra que esvazia embaixo.
+class _ActButton extends StatelessWidget {
   const _ActButton({
     required this.active,
     required this.enabled,
@@ -364,185 +349,86 @@ class _ActButton extends StatefulWidget {
   final VoidCallback onTap;
 
   @override
-  State<_ActButton> createState() => _ActButtonState();
-}
-
-class _ActButtonState extends State<_ActButton>
-    with SingleTickerProviderStateMixin {
-  late final _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1400),
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    _sync();
-  }
-
-  @override
-  void didUpdateWidget(_ActButton old) {
-    super.didUpdateWidget(old);
-    _sync();
-  }
-
-  void _sync() {
-    if (widget.active && !_pulse.isAnimating) {
-      _pulse.repeat();
-    } else if (!widget.active && _pulse.isAnimating) {
-      _pulse
-        ..stop()
-        ..value = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _pulse.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    const size = 66.0;
-    final t = widget.timer;
+    final t = timer;
     final urgent = t != null && t <= 10;
-    final ringColor = urgent ? CoupColors.error : CoupColors.goldHigh;
     return Semantics(
       button: true,
-      label: widget.active ? 'Agir' : 'Ações',
+      label: active ? 'Agir' : 'Ações',
       child: SizedBox(
-        width: size + 16,
-        height: size + 16,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Halo pulsante quando é a sua vez.
-            AnimatedBuilder(
-              animation: _pulse,
-              builder: (_, _) {
-                if (!widget.active) return const SizedBox.shrink();
-                final v = Curves.easeOut.transform(_pulse.value);
-                return Container(
-                  width: size + 16 * v,
-                  height: size + 16 * v,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: CoupColors.gold.withValues(alpha: 0.35 * (1 - v)),
-                  ),
-                );
-              },
-            ),
-            if (t != null && widget.total > 0)
-              SizedBox(
-                width: size + 6,
-                height: size + 6,
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween(end: t / widget.total),
-                  duration: const Duration(milliseconds: 950),
-                  builder: (_, v, _) => CustomPaint(
-                    painter: _RingPainter(value: v, color: ringColor),
-                  ),
-                ),
-              ),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              width: size,
-              height: size,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: widget.active
-                    ? const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [CoupColors.goldHigh, CoupColors.gold],
-                      )
-                    : null,
-                color: widget.active ? null : CoupColors.surfaceHigh,
-                border: Border.all(
-                  color: widget.active
-                      ? CoupColors.goldHigh
-                      : CoupColors.border,
-                ),
-                boxShadow: widget.active
-                    ? [
-                        BoxShadow(
-                          color: CoupColors.gold.withValues(alpha: 0.5),
-                          blurRadius: 14,
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Material(
-                type: MaterialType.transparency,
-                shape: const CircleBorder(),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: widget.enabled ? widget.onTap : null,
+        width: 96,
+        height: 64,
+        child: Material(
+          color: active ? Tv.carmine : Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: active
+                ? BorderSide.none
+                : const BorderSide(color: Tv.creditMuted),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: enabled ? onTap : null,
+            child: Stack(
+              children: [
+                Center(
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        widget.active ? Icons.bolt : Icons.style_outlined,
-                        size: 24,
-                        color: widget.active
-                            ? Colors.black
-                            : CoupColors.textSecondary,
-                      ),
                       Text(
-                        widget.active ? 'AGIR' : 'AÇÕES',
-                        style: TextStyle(
-                          fontSize: 10,
-                          letterSpacing: 1.2,
-                          fontWeight: FontWeight.w900,
-                          color: widget.active
-                              ? Colors.black
-                              : CoupColors.textSecondary,
+                        active ? 'AGIR' : 'AÇÕES',
+                        style: TvType.credit(
+                          active ? 17 : 13,
+                          color: active ? Colors.white : Tv.creditDim,
+                          weight: FontWeight.w700,
                         ),
                       ),
+                      if (t != null)
+                        Text(
+                          '${t}s',
+                          style: TvType.figure(
+                            12,
+                            color: active
+                                ? Colors.white
+                                : urgent
+                                ? Tv.carmine
+                                : Tv.creditDim,
+                          ),
+                        ),
                     ],
                   ),
                 ),
-              ),
+                if (t != null && total > 0)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween(end: (t / total).clamp(0.0, 1.0)),
+                      duration: const Duration(milliseconds: 950),
+                      builder: (_, v, _) => Align(
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: v,
+                          child: Container(
+                            height: 4,
+                            color: active
+                                ? Tv.ink.withValues(alpha: 0.55)
+                                : urgent
+                                ? Tv.carmine
+                                : Tv.credit,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
-}
-
-class _RingPainter extends CustomPainter {
-  _RingPainter({required this.value, required this.color});
-  final double value;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round;
-    canvas.drawArc(
-      rect.deflate(1.5),
-      0,
-      2 * math.pi,
-      false,
-      paint..color = CoupColors.border,
-    );
-    canvas.drawArc(
-      rect.deflate(1.5),
-      -math.pi / 2,
-      2 * math.pi * value.clamp(0, 1),
-      false,
-      paint..color = color,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_RingPainter old) =>
-      old.value != value || old.color != color;
 }
 
 // ------------------------------------------------------------ prompt bar
@@ -555,6 +441,7 @@ class _Btn {
   final IconData? icon;
 }
 
+/// A deixa de resposta: sobe sobre o painel quando a mesa espera por você.
 class _PromptBar extends StatelessWidget {
   const _PromptBar({
     required this.title,
@@ -563,7 +450,7 @@ class _PromptBar extends StatelessWidget {
     this.timer,
     this.role,
     this.body,
-    this.accent = CoupColors.gold,
+    this.accent = Tv.credit,
   });
 
   final String title;
@@ -577,20 +464,8 @@ class _PromptBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: CoupColors.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: accent.withValues(alpha: 0.6)),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black54,
-            blurRadius: 18,
-            offset: Offset(0, 6),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      color: Tv.stageHigh,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -598,8 +473,8 @@ class _PromptBar extends StatelessWidget {
           Row(
             children: [
               if (role != null) ...[
-                InfluenceCard(role: role, width: 30),
-                const SizedBox(width: 10),
+                SizedBox(width: 44, height: 44, child: CloseUp(role: role!)),
+                const SizedBox(width: 12),
               ],
               Expanded(
                 child: Column(
@@ -609,18 +484,10 @@ class _PromptBar extends StatelessWidget {
                       title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                      ),
+                      style: TvType.name(20, color: accent),
                     ),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        color: CoupColors.textSecondary,
-                      ),
-                    ),
+                    const SizedBox(height: 2),
+                    Text(subtitle.toUpperCase(), style: TvType.credit(10.5)),
                   ],
                 ),
               ),
@@ -628,13 +495,10 @@ class _PromptBar extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(left: 8),
                   child: Text(
-                    '${timer}s',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                      color: timer! <= 10
-                          ? CoupColors.error
-                          : CoupColors.textMuted,
+                    '$timer',
+                    style: TvType.figure(
+                      26,
+                      color: timer! <= 10 ? Tv.carmine : Tv.creditDim,
                     ),
                   ),
                 ),
@@ -642,7 +506,7 @@ class _PromptBar extends StatelessWidget {
           ),
           if (body != null) ...[const SizedBox(height: 10), body!],
           if (buttons.isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Row(
               children: [
                 for (var i = 0; i < buttons.length; i++) ...[
@@ -666,7 +530,11 @@ class _PromptBar extends StatelessWidget {
           const SizedBox(width: 4),
         ],
         Flexible(
-          child: Text(b.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          child: Text(
+            b.label.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ],
     );
@@ -682,9 +550,7 @@ class _PromptBar extends StatelessWidget {
     return FilledButton(
       style: FilledButton.styleFrom(
         backgroundColor: b.color,
-        foregroundColor: b.color == CoupColors.gold
-            ? Colors.black
-            : Colors.white,
+        foregroundColor: b.color == Tv.carmine ? Colors.white : Tv.ink,
         padding: const EdgeInsets.symmetric(horizontal: 8),
       ),
       onPressed: tap,

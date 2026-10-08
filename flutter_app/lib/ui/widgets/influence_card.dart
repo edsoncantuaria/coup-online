@@ -32,27 +32,17 @@ class InfluenceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final height = width * 1.45;
-    final radius = BorderRadius.circular(width * 0.1);
+    final radius = BorderRadius.circular(3);
     final showBack = hidden || role == null;
     final style = showBack ? null : roleStyle(role!);
 
     Widget face;
     if (showBack) {
-      face = Container(
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF2A1D10), Color(0xFF120C06)],
-          ),
-          borderRadius: radius,
-        ),
+      // Verso: o "I" de Intriga em Bodoni sobre o ameixa do palco.
+      face = ColoredBox(
+        color: Tv.stageHigh,
         child: Center(
-          child: Icon(
-            Icons.local_police_outlined,
-            color: CoupColors.goldSoft,
-            size: width * 0.4,
-          ),
+          child: Text('I', style: TvType.title(width * 0.5, color: Tv.rule)),
         ),
       );
     } else {
@@ -102,11 +92,18 @@ class InfluenceCard extends StatelessWidget {
               ]),
               child: face,
             ),
+            ColoredBox(color: Tv.ink.withValues(alpha: 0.35)),
             Center(
-              child: Icon(
-                Icons.close_rounded,
-                color: CoupColors.error.withValues(alpha: 0.85),
-                size: width * 0.6,
+              child: Transform.rotate(
+                angle: -0.35,
+                child: Text(
+                  'FORA',
+                  style: TvType.credit(
+                    width * 0.16,
+                    color: Tv.carmine,
+                    weight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
           ],
@@ -115,10 +112,10 @@ class InfluenceCard extends StatelessWidget {
     }
 
     final borderColor = selected
-        ? CoupColors.goldHigh
+        ? Tv.credit
         : highlight
-        ? CoupColors.error
-        : CoupColors.goldSoft.withValues(alpha: flipped ? 0.3 : 0.8);
+        ? Tv.carmine
+        : Tv.rule;
 
     return GestureDetector(
       onTap: onTap,
@@ -131,21 +128,8 @@ class InfluenceCard extends StatelessWidget {
           borderRadius: radius,
           border: Border.all(
             color: borderColor,
-            width: selected || highlight ? 2.5 : 1.2,
+            width: selected || highlight ? 2 : 1,
           ),
-          boxShadow: [
-            if (selected || highlight)
-              BoxShadow(
-                color: borderColor.withValues(alpha: 0.5),
-                blurRadius: 14,
-                spreadRadius: 1,
-              ),
-            const BoxShadow(
-              color: Colors.black54,
-              blurRadius: 6,
-              offset: Offset(0, 3),
-            ),
-          ],
         ),
         child: ClipRRect(borderRadius: radius, child: face),
       ),
