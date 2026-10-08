@@ -1,5 +1,5 @@
 name: coup
-description: "Coup: jogo de blefe e intriga para Android, iOS e Web."
+description: "Intriga: jogo de blefe e influência para Android, iOS e Web."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -61,6 +61,15 @@ flutter:
   uses-material-design: true
   assets:
     - assets/cards/
+
+  fonts:
+    - family: Cinzel
+      fonts:
+        - asset: assets/fonts/Cinzel-400.ttf
+        - asset: assets/fonts/Cinzel-700.ttf
+          weight: 700
+        - asset: assets/fonts/Cinzel-900.ttf
+          weight: 900
 
   # To add assets to your application, add an assets section, like this:
   # assets:

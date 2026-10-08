@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'branding.dart';
 import 'ui/screens/home_screen.dart';
 import 'ui/theme.dart';
 
@@ -10,7 +11,7 @@ class CoupApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'Coup',
+    title: appName,
     debugShowCheckedModeBanner: false,
     theme: buildCoupTheme(),
     home: const HomeScreen(),

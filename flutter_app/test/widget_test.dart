@@ -18,9 +18,39 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(const CoupApp());
     await tester.pump();
-    expect(find.text('COUP'), findsOneWidget);
-    expect(find.text('JOGAR OFFLINE'), findsOneWidget);
-    expect(find.text('JOGAR ONLINE'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('INTRIGA'), findsOneWidget);
+    expect(find.text('CAMPANHA'), findsOneWidget);
+    expect(find.text('ONLINE'), findsOneWidget);
+    expect(find.text('COMO JOGAR'), findsOneWidget);
+
+    // Partida rápida abre as opções e começa a partida.
+    await tester.tap(find.text('PARTIDA RÁPIDA'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('DIFICULDADE'), findsOneWidget);
+    await tester.tap(find.text('Difícil'));
+    await tester.pump();
+    expect(find.text('Contra bots · Difícil'), findsOneWidget);
+    await tester.ensureVisible(find.text('JOGAR'));
+    await tester.tap(find.text('JOGAR'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byType(GameScreen), findsOneWidget);
+  });
+
+  testWidgets('menu inicial cabe no celular pequeno e no desktop', (
+    tester,
+  ) async {
+    for (final size in const [Size(360, 640), Size(1280, 800)]) {
+      tester.view.physicalSize = size * 3;
+      tester.view.devicePixelRatio = 3;
+      await tester.pumpWidget(const CoupApp());
+      await tester.pump(const Duration(seconds: 2));
+      expect(tester.takeException(), isNull);
+      expect(find.text('INTRIGA'), findsOneWidget);
+    }
+    tester.view.reset();
   });
 
   for (final size in const [Size(390, 844), Size(360, 640), Size(1280, 800)]) {

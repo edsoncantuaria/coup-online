@@ -1,6 +1,6 @@
-# Coup em Flutter
+# Intriga
 
-Nova versão do Coup para **Android, iOS e Web**, num único código Flutter.
+**Intriga** é um jogo de blefe e influência na corte, inspirado no Coup, para **Android, iOS e Web**, num único código Flutter.
 Substitui o app Expo/React Native de `client/` e conversa com o mesmo servidor de `server/`.
 
 ## Rodar
@@ -20,6 +20,13 @@ flutter build apk --dart-define=COUP_SERVER_URL=https://seu-servidor
 ```
 
 O jogador também pode trocar o servidor na tela Online (fica salvo no aparelho).
+
+## Marca
+
+O nome do app vem de `lib/branding.dart`. A fonte de títulos é a Cinzel
+(SIL Open Font License, em `assets/fonts/`). Os ícones de Android, iOS e Web
+foram gerados a partir do mesmo desenho do brasão (`lib/ui/widgets/emblem.dart`).
+"Coup" é marca da editora do jogo de tabuleiro, por isso o app se chama Intriga.
 
 ## Campanha
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../branding.dart';
 import '../engine/models.dart';
 
 /// Paleta "corte imperial" herdada do app original.
@@ -90,6 +91,12 @@ ThemeData buildCoupTheme() {
       foregroundColor: CoupColors.text,
       elevation: 0,
       centerTitle: true,
+      titleTextStyle: TextStyle(
+        fontFamily: displayFont,
+        fontSize: 20,
+        fontWeight: FontWeight.w700,
+        color: CoupColors.text,
+      ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,

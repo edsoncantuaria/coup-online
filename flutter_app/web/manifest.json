@@ -1,11 +1,11 @@
 {
-    "name": "Coup",
-    "short_name": "Coup",
+    "name": "Intriga",
+    "short_name": "Intriga",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0B0F14",
     "theme_color": "#0B0F14",
-    "description": "Coup: jogo de blefe e intriga.",
+    "description": "Intriga: jogo de blefe e influência na corte.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

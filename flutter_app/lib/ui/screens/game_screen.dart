@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../branding.dart';
 import '../../campaign/campaign.dart';
 import '../../engine/models.dart';
 import '../../game/game_controller.dart';
@@ -217,7 +218,7 @@ class _GameScreenState extends State<GameScreen> {
         ? 'Sala ${c.roomCode ?? ''}'
         : run != null
         ? 'Corte ${run.court + 1}/${courts.length}'
-        : 'Coup';
+        : appName;
     final stats = s?.matchStats;
     return Column(
       children: [
