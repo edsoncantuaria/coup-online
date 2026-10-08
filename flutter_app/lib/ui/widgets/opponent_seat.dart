@@ -17,6 +17,7 @@ class OpponentSeat extends StatelessWidget {
     this.width = 116,
     this.statusLabel,
     this.voice,
+    this.anchorKey,
   });
 
   final Player player;
@@ -29,6 +30,9 @@ class OpponentSeat extends StatelessWidget {
 
   /// Estado no chat de voz: null = fora, true = mudo, false = falando.
   final bool? voice;
+
+  /// Marca a posição do avatar para as animações da mesa.
+  final Key? anchorKey;
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +55,12 @@ class OpponentSeat extends StatelessWidget {
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
-                PlayerAvatar(player: player, size: 46, ringColor: ring),
+                PlayerAvatar(
+                  key: anchorKey,
+                  player: player,
+                  size: 46,
+                  ringColor: ring,
+                ),
                 if (dead)
                   const Icon(Icons.close, color: CoupColors.error, size: 40),
                 if (statusLabel != null)

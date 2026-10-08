@@ -16,11 +16,19 @@ import 'influence_card.dart';
 /// "Agir" que abre as ações. Decisões de resposta (desafiar, bloquear,
 /// trocar) sobem numa faixa curta só quando é a sua vez de responder.
 class MyPanel extends StatefulWidget {
-  const MyPanel({super.key, required this.controller, this.trailing});
+  const MyPanel({
+    super.key,
+    required this.controller,
+    this.trailing,
+    this.anchorKey,
+  });
   final GameController controller;
 
   /// Controle extra ao lado do nome (ex.: microfone do chat de voz).
   final Widget? trailing;
+
+  /// Marca a posição da mão para as animações da mesa.
+  final Key? anchorKey;
 
   @override
   State<MyPanel> createState() => _MyPanelState();
@@ -156,6 +164,7 @@ class _MyPanelState extends State<MyPanel> {
   );
 
   Widget _hand(Player me, double width, bool losing) => Row(
+    key: widget.anchorKey,
     mainAxisSize: MainAxisSize.min,
     children: [
       for (final card in me.cards)

@@ -7,6 +7,7 @@ import '../../game/online_game_controller.dart';
 import '../../game/voice_chat.dart';
 import '../theme.dart';
 import '../widgets/arena.dart';
+import '../widgets/card_effects.dart';
 import '../widgets/my_panel.dart';
 import '../widgets/opponent_seat.dart';
 import '../widgets/table_extras.dart';
@@ -29,6 +30,7 @@ class _GameScreenState extends State<GameScreen> {
   int? _lastInvalidStamp;
   bool _wasMyDecision = false;
   VoiceChat? _voice;
+  final _anchors = SeatAnchors();
 
   @override
   void initState() {
@@ -221,36 +223,46 @@ class _GameScreenState extends State<GameScreen> {
   Widget _table(GameState s, bool wide) {
     return Stack(
       children: [
-        Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 14, 8, 0),
-              child: _opponents(s, wide),
-            ),
-            Expanded(
-              child: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
-                  ),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 520),
-                    child: Arena(state: s, myId: c.myId, showRecentLog: false),
+        CardEffectsLayer(
+          state: s,
+          myId: c.myId,
+          anchors: _anchors,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 14, 8, 0),
+                child: _opponents(s, wide),
+              ),
+              Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 520),
+                      child: Arena(
+                        state: s,
+                        myId: c.myId,
+                        showRecentLog: false,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
-                child: MyPanel(
-                  controller: c,
-                  trailing: VoiceBadge(muted: _voice?.voiceOf(c.myId)),
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 760),
+                  child: MyPanel(
+                    controller: c,
+                    trailing: VoiceBadge(muted: _voice?.voiceOf(c.myId)),
+                    anchorKey: _anchors.keyFor(c.myId),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         Positioned.fill(
           child: FlashReveal(state: s, myId: c.myId),
@@ -287,6 +299,7 @@ class _GameScreenState extends State<GameScreen> {
                 width: width,
                 revealAll: s.phase == Phase.gameOver,
                 voice: _voice?.voiceOf(p.id),
+                anchorKey: _anchors.keyFor(p.id),
                 state: pending == p.id && inResponse
                     ? SeatState.waiting
                     : s.currentPlayer?.id == p.id && s.phase != Phase.gameOver
