@@ -128,7 +128,9 @@ class _ActionSheet extends StatelessWidget {
                   style: TextStyle(
                     fontFamily: TvType.sans,
                     fontSize: 14,
-                    color: myTurn && me.coins >= 10 ? Tv.carmine : Tv.creditDim,
+                    color: myTurn && me.coins >= 10
+                        ? Tv.carmineText
+                        : Tv.creditDim,
                   ),
                 ),
               ],

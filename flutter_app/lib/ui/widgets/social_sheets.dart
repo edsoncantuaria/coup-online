@@ -166,7 +166,7 @@ class _PlayerSheetState extends State<_PlayerSheet> {
                         _reason == r
                             ? Icons.radio_button_checked
                             : Icons.radio_button_off,
-                        color: _reason == r ? Tv.carmine : Tv.creditMuted,
+                        color: _reason == r ? Tv.carmineText : Tv.creditMuted,
                       ),
                     ),
                   if (_reason != null) ...[

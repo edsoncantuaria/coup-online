@@ -12,8 +12,8 @@ import '../theme.dart';
 import 'common.dart';
 import 'tv.dart';
 
-/// O palco da mesa: o close de quem declarou, o crédito da cena e o que a
-/// mesa espera agora. Cada declaração é um crédito; cada revelação, um corte.
+/// O centro da mesa: o retrato de quem declarou, impresso como capa, o
+/// crédito da jogada e o que a mesa espera agora.
 class Stage extends StatelessWidget {
   const Stage({
     super.key,
@@ -111,8 +111,8 @@ class Stage extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              stops: [0.0, 0.35, 1.0],
-              colors: [Color(0x000E0A0D), Color(0x660E0A0D), Tv.ink],
+              stops: [0.0, 0.55, 1.0],
+              colors: [Color(0x00120E0C), Color(0x33120E0C), Tv.ink],
             ),
           ),
         ),
@@ -130,13 +130,19 @@ class Stage extends StatelessWidget {
     );
   }
 
+  /// Rosto para uma cena sem declaração: a última figura que o jogador
+  /// disse ser; na sua vez, uma carta da sua mão (só você vê esta tela).
+  Role? _face(String id) =>
+      traces?.of(id).firstOrNull ??
+      (id == myId ? state.playerById(id)?.aliveRoles.firstOrNull : null);
+
   _Scene _scene() {
     final s = state;
     final a = s.currentAction;
     final pb = s.pendingBlock;
 
     if (s.phase == Phase.gameOver) {
-      return const _Scene(name: 'Fim.', line: 'Créditos finais');
+      return const _Scene(name: 'Fim.', line: 'A última caixa fechou');
     }
 
     if (s.phase == Phase.losingInfluence) {
@@ -150,7 +156,7 @@ class Stage extends StatelessWidget {
       return _Scene(
         name: _n(s.losingInfluenceId),
         line: reason,
-        color: Tv.carmine,
+        color: Tv.carmineText,
       );
     }
 
@@ -169,6 +175,8 @@ class Stage extends StatelessWidget {
       final target = a.target == null ? '' : ' · contra ${_n(a.target)}';
       if (claim == null) {
         return _Scene(
+          role: _face(a.source),
+          dim: 0.15,
           name: _n(a.source),
           line: '${actionLabel(a.type)}$target',
         );
@@ -200,17 +208,17 @@ class Stage extends StatelessWidget {
       final mine = last ?? cp.aliveRoles.firstOrNull;
       return _Scene(
         role: mine,
-        dim: 0.45,
-        name: 'Sua cena.',
+        dim: 0.15,
+        name: 'Sua vez.',
         line: last != null
             ? 'Da última vez, você foi ${roleArticle(last)}'
-            : 'Você está no ar',
+            : 'Escolha a jogada',
       );
     }
     return _Scene(
       role: last,
-      dim: 0.45,
-      name: 'Cena de ${cp.name}.',
+      dim: 0.15,
+      name: 'Vez de ${cp.name}.',
       line: last != null
           ? 'Da última vez, disse ser ${roleArticle(last)}'
           : 'Escolhendo a jogada',
@@ -421,16 +429,16 @@ class _FreezeFrameState extends State<FreezeFrame>
         credit: r.proven
             ? '${n(r.playerId, r.playerName)} tinha ${roleArticle(r.role)}'
             : '${n(r.playerId, r.playerName)} não tinha ${roleArticle(r.role)}',
-        color: r.proven ? Tv.proven : Tv.carmine,
+        color: r.proven ? Tv.proven : Tv.carmineText,
       );
     } else if (l != null && l.stamp != _seenLoss) {
       _seenLoss = l.stamp;
       next = _Freeze(
         role: l.role,
         cue: 'REVELAÇÃO',
-        title: 'Fora de cena.',
+        title: 'Um palito a menos.',
         credit: '${n(l.playerId, l.playerName)} perdeu ${roleArticle(l.role)}',
-        color: Tv.carmine,
+        color: Tv.carmineText,
       );
     }
     if (next != null) {
@@ -485,9 +493,23 @@ class _FreezeFrameState extends State<FreezeFrame>
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         stops: [0.3, 1.0],
-                        colors: [Color(0x000E0A0D), Tv.ink],
+                        colors: [Color(0x00120E0C), Tv.ink],
                       ),
                     ),
+                  ),
+                  // O risco do palito: um clarão seco nos primeiros quadros.
+                  AnimatedBuilder(
+                    animation: _push,
+                    builder: (_, _) {
+                      final t = _push.value;
+                      if (!_push.isAnimating || t > 0.08) {
+                        return const SizedBox.shrink();
+                      }
+                      return ColoredBox(
+                        color: const Color(0xFFFFE9B8)
+                            .withValues(alpha: 0.8 * (1 - t / 0.08)),
+                      );
+                    },
                   ),
                   Column(
                     children: [
@@ -498,18 +520,24 @@ class _FreezeFrameState extends State<FreezeFrame>
                           wide ? 40 : 20,
                           0,
                           20,
-                          wide ? 72 : 120,
+                          wide ? 72 : 48,
                         ),
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                f.title,
-                                style: TvType.title(
-                                  wide ? 96 : 64,
-                                  color: f.color,
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  f.title,
+                                  maxLines: 1,
+                                  style: TvType.title(
+                                    wide ? 96 : 64,
+                                    color: f.color,
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 6),
@@ -525,7 +553,7 @@ class _FreezeFrameState extends State<FreezeFrame>
                           ),
                         ),
                       ),
-                      const LetterboxBar(height: 48),
+                      const LetterboxBar(height: 24),
                     ],
                   ),
                 ],
@@ -607,7 +635,7 @@ class FinalCredits extends StatelessWidget {
                     iWon ? 'Vitória.' : 'Derrota.',
                     style: TvType.title(
                       wide ? 88 : 64,
-                      color: iWon ? Tv.credit : Tv.carmine,
+                      color: iWon ? Tv.credit : Tv.carmineText,
                     ),
                   ),
                   const SizedBox(height: 4),

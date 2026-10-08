@@ -151,7 +151,7 @@ class _CoinBadgeState extends State<CoinBadge>
                         up ? '+$_delta' : '−${-_delta}',
                         style: TvType.figure(
                           large ? 18 : 13,
-                          color: up ? Tv.proven : Tv.carmine,
+                          color: up ? Tv.proven : Tv.carmineText,
                         ),
                       ),
                     ),
@@ -166,8 +166,8 @@ class _CoinBadgeState extends State<CoinBadge>
   }
 }
 
-/// Influências em lâminas finas: em branco quente enquanto ocultas e vivas,
-/// na cor do papel quando reveladas, riscadas quando perdidas.
+/// Influências como palitos de fósforo: inteiros enquanto vivas, queimados
+/// quando perdidas, com a inicial do papel quando ele é conhecido.
 class InfluencePips extends StatelessWidget {
   const InfluencePips({
     super.key,
@@ -190,7 +190,7 @@ class InfluencePips extends StatelessWidget {
         children: [
           for (final c in player.cards)
             Padding(
-              padding: const EdgeInsets.only(right: 3),
+              padding: const EdgeInsets.only(right: 5),
               child: FlipSwitcher(
                 flipKey:
                     '${c.isFlipped}-${(c.isFlipped || revealAll) && !c.hidden ? c.role : null}',
@@ -204,26 +204,11 @@ class InfluencePips extends StatelessWidget {
 
   Widget _pip(GameCard c) {
     final show = (c.isFlipped || revealAll) && !c.hidden;
-    final accent = show ? roleStyle(c.role).accent : Tv.credit;
-    final w = height * 0.5;
-    return Container(
-      width: w,
-      height: height,
-      decoration: BoxDecoration(
-        color: c.isFlipped ? null : accent,
-        border: c.isFlipped ? Border.all(color: accent) : null,
-      ),
-      alignment: Alignment.center,
-      child: show
-          ? Text(
-              roleLabel(c.role).substring(0, 1),
-              style: TvType.credit(
-                w * 0.8,
-                color: c.isFlipped ? accent : Tv.ink,
-                weight: FontWeight.w700,
-              ),
-            )
-          : null,
+    return MatchStick(
+      burnt: c.isFlipped,
+      height: height * 1.3,
+      mark: show ? roleLabel(c.role).substring(0, 1) : null,
+      markColor: show ? roleStyle(c.role).accent : Tv.credit,
     );
   }
 }

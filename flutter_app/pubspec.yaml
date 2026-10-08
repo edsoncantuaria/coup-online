@@ -63,21 +63,9 @@ flutter:
     - assets/cards/
 
   fonts:
-    - family: BodoniModa
+    - family: Yellowtail
       fonts:
-        - asset: assets/fonts/BodoniModa-500.ttf
-          weight: 500
-        - asset: assets/fonts/BodoniModa-800.ttf
-          weight: 800
-        - asset: assets/fonts/BodoniModa-500i.ttf
-          weight: 500
-          style: italic
-        - asset: assets/fonts/BodoniModa-700i.ttf
-          weight: 700
-          style: italic
-        - asset: assets/fonts/BodoniModa-900i.ttf
-          weight: 900
-          style: italic
+        - asset: assets/fonts/Yellowtail-400.ttf
     - family: ArchivoNarrow
       fonts:
         - asset: assets/fonts/ArchivoNarrow-400.ttf

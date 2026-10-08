@@ -2,36 +2,54 @@ import 'package:flutter/material.dart';
 
 import '../engine/models.dart';
 
-/// Mundo "novela das nove": preto de transmissão tingido de ameixa, closes
-/// dos personagens, créditos em branco quente e um carmim reservado para o
-/// gancho (desafio, perigo, ação principal).
+/// Mundo "caixas de fósforo": a gaveta de caixinhas de clube noturno.
+/// Fundo de gaveta preto, capas em vinho e verde-garrafa, letreiro em
+/// dourado de hot stamping (só no que está escolhido ou é título), a lixa
+/// cinza riscando as bordas e a cabeça vermelha do palito para o perigo.
 abstract final class Tv {
-  /// Fundo: preto de transmissão, puxado para o ameixa.
-  static const ink = Color(0xFF0E0A0D);
+  /// Fundo: o preto quente do fundo da gaveta.
+  static const ink = Color(0xFF120E0C);
 
-  /// Superfícies (folhas, faixas de crédito).
-  static const stage = Color(0xFF181116);
-  static const stageHigh = Color(0xFF231920);
+  /// Superfícies (folhas, forro da gaveta).
+  static const stage = Color(0xFF1C1714);
+  static const stageHigh = Color(0xFF26201B);
 
-  /// Fio dos créditos e divisórias.
-  static const rule = Color(0xFF3B2C35);
+  /// Fios e divisórias.
+  static const rule = Color(0xFF3A322B);
 
-  /// Texto de crédito: principal, secundário e apagado.
-  static const credit = Color(0xFFF3E9DF);
-  static const creditDim = Color(0xFFBCA9B1);
-  static const creditMuted = Color(0xFF94808A);
+  /// Papel da capa: texto principal, secundário e apagado.
+  static const credit = Color(0xFFEFE6D2);
+  static const creditDim = Color(0xFFC2B6A0);
+  static const creditMuted = Color(0xFF978B78);
 
-  /// O carmim do gancho: desafio, perigo e a ação principal da tela.
-  static const carmine = Color(0xFFE3263F);
-  static const carmineDeep = Color(0xFF6E0E1C);
+  /// Capas de clube: vinho (ação principal) e verde-garrafa.
+  static const oxblood = Color(0xFF6B1622);
+  static const bottle = Color(0xFF1E3B2D);
 
-  /// Moedas: o único dourado do mundo, só em números de moeda.
-  static const coin = Color(0xFFE9B44C);
+  /// Dourado de hot stamping: títulos e o que está escolhido.
+  static const foil = Color(0xFFD9B25A);
+
+  /// A lixa: faixa cinza nas bordas das capas.
+  static const striker = Color(0xFF5E5852);
+
+  /// Cabeça do palito: desafio e perigo. Preenchimento (texto claro em
+  /// cima passa de 4.5:1).
+  static const carmine = Color(0xFFB8322A);
+
+  /// Vermelho para texto sobre o fundo escuro.
+  static const carmineText = Color(0xFFE8705F);
+  static const carmineDeep = Color(0xFF5E1712);
+
+  /// Palito queimado.
+  static const char = Color(0xFF2B2420);
+
+  /// Moedas.
+  static const coin = Color(0xFFD9B25A);
 
   /// Estados que precisam de cor própria.
-  static const proven = Color(0xFF5FBF85);
-  static const bluff = Color(0xFFB58CF0);
-  static const cue = Color(0xFF7FB3E6);
+  static const proven = Color(0xFF6FBF8A);
+  static const bluff = Color(0xFFB99AE8);
+  static const cue = Color(0xFF8DB8E0);
 }
 
 /// Nomes antigos, mantidos enquanto as telas migram para [Tv].
@@ -55,28 +73,20 @@ abstract final class CoupColors {
   static const info = Tv.cue;
 }
 
-/// Vozes tipográficas: Bodoni Moda (títulos e nomes, em itálico) e Archivo
-/// Narrow (créditos, rótulos, números e texto corrido).
+/// Vozes tipográficas: Yellowtail (o letreiro de clube, só em títulos) e
+/// Archivo Narrow (nomes, a linha da lixa em caixa alta, números e texto).
 abstract final class TvType {
-  static const serif = 'BodoniModa';
+  static const script = 'Yellowtail';
   static const sans = 'ArchivoNarrow';
 
-  /// Cartão de título ("Intriga", "Capítulo 3").
-  static TextStyle title(double size, {Color color = Tv.credit}) => TextStyle(
-    fontFamily: serif,
-    fontStyle: FontStyle.italic,
-    fontWeight: FontWeight.w700,
-    fontSize: size,
-    height: 1.0,
-    letterSpacing: -0.02 * size,
-    color: color,
-  );
+  /// Letreiro em script dourado ("Intriga", "Capítulo 3").
+  static TextStyle title(double size, {Color color = Tv.foil}) =>
+      TextStyle(fontFamily: script, fontSize: size, height: 1.05, color: color);
 
-  /// Nome de personagem ou jogador em crédito.
+  /// Nome de jogador, ação ou item de menu.
   static TextStyle name(double size, {Color color = Tv.credit}) => TextStyle(
-    fontFamily: serif,
-    fontStyle: FontStyle.italic,
-    fontWeight: FontWeight.w500,
+    fontFamily: sans,
+    fontWeight: FontWeight.w700,
     fontSize: size,
     height: 1.1,
     color: color,
@@ -156,8 +166,8 @@ ThemeData buildCoupTheme() {
     useMaterial3: true,
     fontFamily: TvType.sans,
     colorScheme: const ColorScheme.dark(
-      primary: Tv.carmine,
-      onPrimary: Tv.credit,
+      primary: Tv.foil,
+      onPrimary: Tv.ink,
       secondary: Tv.credit,
       onSecondary: Tv.ink,
       surface: Tv.stage,
@@ -179,9 +189,9 @@ ThemeData buildCoupTheme() {
       fontFamily: TvType.sans,
     ),
     textSelectionTheme: const TextSelectionThemeData(
-      cursorColor: Tv.carmine,
-      selectionColor: Color(0x66E3263F),
-      selectionHandleColor: Tv.carmine,
+      cursorColor: Tv.foil,
+      selectionColor: Color(0x66D9B25A),
+      selectionHandleColor: Tv.foil,
     ),
     appBarTheme: AppBarTheme(
       backgroundColor: Tv.ink,
@@ -189,7 +199,7 @@ ThemeData buildCoupTheme() {
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       centerTitle: true,
-      titleTextStyle: TvType.title(22),
+      titleTextStyle: TvType.title(28),
     ),
     inputDecorationTheme: const InputDecorationTheme(
       filled: true,
@@ -199,19 +209,19 @@ ThemeData buildCoupTheme() {
         borderSide: BorderSide(color: Tv.rule),
       ),
       focusedBorder: UnderlineInputBorder(
-        borderSide: BorderSide(color: Tv.carmine, width: 2),
+        borderSide: BorderSide(color: Tv.foil, width: 2),
       ),
       labelStyle: TextStyle(color: Tv.creditDim),
       hintStyle: TextStyle(color: Tv.creditMuted),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        backgroundColor: Tv.carmine,
-        foregroundColor: Tv.credit,
+        backgroundColor: Tv.oxblood,
+        foregroundColor: Tv.foil,
         disabledBackgroundColor: Tv.stageHigh,
         disabledForegroundColor: Tv.creditMuted,
         minimumSize: const Size(48, 52),
-        textStyle: TvType.credit(15, color: Tv.credit, weight: FontWeight.w700),
+        textStyle: TvType.credit(15, color: Tv.foil, weight: FontWeight.w700),
         shape: square,
       ),
     ),
@@ -219,7 +229,7 @@ ThemeData buildCoupTheme() {
       style: OutlinedButton.styleFrom(
         foregroundColor: Tv.credit,
         minimumSize: const Size(48, 52),
-        side: const BorderSide(color: Tv.creditMuted),
+        side: const BorderSide(color: Tv.striker, width: 1.5),
         textStyle: TvType.credit(15, color: Tv.credit, weight: FontWeight.w700),
         shape: square,
       ),
@@ -236,7 +246,7 @@ ThemeData buildCoupTheme() {
         shape: WidgetStatePropertyAll(square),
         side: const WidgetStatePropertyAll(BorderSide(color: Tv.rule)),
         backgroundColor: WidgetStateProperty.resolveWith(
-          (s) => s.contains(WidgetState.selected) ? Tv.credit : Tv.stage,
+          (s) => s.contains(WidgetState.selected) ? Tv.foil : Tv.stage,
         ),
         foregroundColor: WidgetStateProperty.resolveWith(
           (s) => s.contains(WidgetState.selected) ? Tv.ink : Tv.creditDim,
@@ -249,7 +259,7 @@ ThemeData buildCoupTheme() {
     ),
     chipTheme: ChipThemeData(
       backgroundColor: Tv.stage,
-      selectedColor: Tv.credit,
+      selectedColor: Tv.foil,
       checkmarkColor: Tv.ink,
       side: const BorderSide(color: Tv.rule),
       shape: square,
@@ -262,13 +272,13 @@ ThemeData buildCoupTheme() {
       ),
     ),
     sliderTheme: const SliderThemeData(
-      activeTrackColor: Tv.carmine,
+      activeTrackColor: Tv.foil,
       inactiveTrackColor: Tv.rule,
       thumbColor: Tv.credit,
-      overlayColor: Color(0x33E3263F),
+      overlayColor: Color(0x33D9B25A),
       activeTickMarkColor: Tv.credit,
       inactiveTickMarkColor: Tv.creditMuted,
-      valueIndicatorColor: Tv.carmine,
+      valueIndicatorColor: Tv.oxblood,
     ),
     bottomSheetTheme: const BottomSheetThemeData(
       backgroundColor: Tv.stage,
@@ -279,7 +289,7 @@ ThemeData buildCoupTheme() {
       backgroundColor: Tv.stage,
       surfaceTintColor: Colors.transparent,
       shape: square,
-      titleTextStyle: TvType.title(24),
+      titleTextStyle: TvType.title(30),
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
@@ -292,13 +302,13 @@ ThemeData buildCoupTheme() {
       shape: square,
     ),
     tabBarTheme: TabBarThemeData(
-      indicatorColor: Tv.carmine,
+      indicatorColor: Tv.foil,
       labelColor: Tv.credit,
       unselectedLabelColor: Tv.creditMuted,
       dividerColor: Tv.rule,
       labelStyle: TvType.credit(13, color: Tv.credit, weight: FontWeight.w700),
     ),
     dividerTheme: const DividerThemeData(color: Tv.rule, thickness: 1),
-    progressIndicatorTheme: const ProgressIndicatorThemeData(color: Tv.carmine),
+    progressIndicatorTheme: const ProgressIndicatorThemeData(color: Tv.foil),
   );
 }

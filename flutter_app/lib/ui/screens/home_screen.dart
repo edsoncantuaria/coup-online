@@ -91,7 +91,7 @@ class _HomeScreenState extends State<HomeScreen>
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Seu nome nos créditos'),
+        title: const Text('Seu nome na mesa'),
         content: TextField(
           controller: ctrl,
           autofocus: true,
@@ -216,7 +216,11 @@ class _HomeScreenState extends State<HomeScreen>
             child: Text(appName, style: TvType.title(wide ? 112 : 76)),
           ),
           const SizedBox(height: 10),
-          Text(appTagline.toUpperCase(), style: TvType.credit(12)),
+          // O lema na lixa, como o telefone do clube na borda da caixinha.
+          SizedBox(
+            width: wide ? 340 : 280,
+            child: LetterboxBar(cue: appTagline.toUpperCase(), height: 26),
+          ),
         ],
       ),
     );
@@ -274,9 +278,20 @@ class _HomeScreenState extends State<HomeScreen>
                 children: [
                   PushInCloseUp(role: _lead),
                   const _Scrim(horizontal: true),
+                  // A lixa na borda da capa.
+                  const Positioned(
+                    top: 0,
+                    bottom: 0,
+                    right: 0,
+                    width: 14,
+                    child: RotatedBox(
+                      quarterTurns: 1,
+                      child: StrikerStrip(height: 14),
+                    ),
+                  ),
                   Positioned(
                     left: 56,
-                    bottom: 56,
+                    bottom: 48,
                     right: 24,
                     child: _CastCredit(role: _lead),
                   ),
@@ -410,7 +425,7 @@ class _Starring extends StatelessWidget {
               constraints: const BoxConstraints(minHeight: 48),
               child: Row(
                 children: [
-                  Text('ESTRELANDO', style: TvType.credit(11)),
+                  Text('NA MESA', style: TvType.credit(11)),
                   const SizedBox(width: 10),
                   Flexible(
                     child: Text(

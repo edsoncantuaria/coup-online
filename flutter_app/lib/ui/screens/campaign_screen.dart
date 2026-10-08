@@ -539,7 +539,7 @@ class _NextCourtState extends State<_NextCourt>
           ? (many ? 'PUNIÇÕES SORTEADAS' : 'PUNIÇÃO SORTEADA')
           : 'SORTEIO',
       title: _TitleCard(
-        'Capítulo ${run.court + 1}',
+        'Corte ${run.court + 1}',
         below: Text(
           court.name.toUpperCase(),
           style: TvType.credit(13, color: Tv.credit, weight: FontWeight.w700),
@@ -621,7 +621,7 @@ class _CurseLine extends StatelessWidget {
               Icon(
                 curse.icon,
                 size: 26,
-                color: landed ? Tv.carmine : Tv.creditMuted,
+                color: landed ? Tv.carmineText : Tv.creditMuted,
               ),
             ],
           ),
@@ -775,7 +775,7 @@ class _CourtStrip extends StatelessWidget {
     };
     return Tooltip(
       message:
-          'Capítulo ${i + 1}: ${courts[i].name}'
+          'Corte ${i + 1}: ${courts[i].name}'
           '${done ? ' (vencida)' : ''}$rewardText',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -856,7 +856,7 @@ class _BlessingChoice extends StatelessWidget {
   @override
   Widget build(BuildContext context) => _Stage(
     role: Role.contessa,
-    cue: 'FIM DO CAPÍTULO ${run.court + 1}',
+    cue: 'CORTE ${run.court + 1} VENCIDA',
     title: _TitleCard('${run.currentCourt.name} conquistada!'),
     children: [
       _RunStatus(run: run),
@@ -942,7 +942,7 @@ class _Finished extends StatelessWidget {
       role: won ? Role.duke : Role.assassin,
       frozen: !won,
       hot: !won,
-      cue: 'FIM DA TEMPORADA',
+      cue: 'FIM DA CAMPANHA',
       title: _TitleCard(
         won ? 'O Trono é seu!' : 'Sua campanha terminou',
         below: Text(
@@ -1002,7 +1002,7 @@ class _HistoryLine extends StatelessWidget {
         Icon(
           result.won ? Icons.check : Icons.close,
           size: 18,
-          color: result.won ? Tv.proven : Tv.carmine,
+          color: result.won ? Tv.proven : Tv.carmineText,
         ),
         const SizedBox(width: 6),
         Text(

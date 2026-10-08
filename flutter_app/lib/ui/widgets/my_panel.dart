@@ -245,8 +245,10 @@ class _MyPanelState extends State<MyPanel> {
             buttons: [
               for (final r in roles)
                 _Btn(
-                  roleLabel(r),
-                  me.aliveRoles.contains(r) ? Tv.cue : Tv.bluff,
+                  me.aliveRoles.contains(r)
+                      ? roleLabel(r)
+                      : '${roleLabel(r)} · blefe',
+                  me.aliveRoles.contains(r) ? Tv.cue : null,
                   () => c.sendResponse(ResponseType.block, r),
                   icon: Icons.shield,
                 ),
@@ -391,7 +393,7 @@ class _ActButton extends StatelessWidget {
                             color: active
                                 ? Colors.white
                                 : urgent
-                                ? Tv.carmine
+                                ? Tv.carmineText
                                 : Tv.creditDim,
                           ),
                         ),
@@ -498,7 +500,7 @@ class _PromptBar extends StatelessWidget {
                     '$timer',
                     style: TvType.figure(
                       26,
-                      color: timer! <= 10 ? Tv.carmine : Tv.creditDim,
+                      color: timer! <= 10 ? Tv.carmineText : Tv.creditDim,
                     ),
                   ),
                 ),

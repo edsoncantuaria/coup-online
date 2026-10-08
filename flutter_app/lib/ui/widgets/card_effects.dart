@@ -316,13 +316,6 @@ class EffectPainter extends CustomPainter {
     c.scale(sx, 1);
     c.drawCircle(
       Offset.zero,
-      r * 1.8,
-      Paint()
-        ..color = _gold.withValues(alpha: 0.25 * alpha)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-    );
-    c.drawCircle(
-      Offset.zero,
       r,
       Paint()..color = _goldDeep.withValues(alpha: alpha),
     );
@@ -361,14 +354,6 @@ class EffectPainter extends CustomPainter {
           package: icon.fontPackage,
           fontSize: size,
           color: color.withValues(alpha: alpha),
-          shadows: glow
-              ? [
-                  Shadow(
-                    color: color.withValues(alpha: 0.8 * alpha),
-                    blurRadius: 16,
-                  ),
-                ]
-              : null,
         ),
       ),
       textDirection: TextDirection.ltr,
@@ -401,16 +386,11 @@ class EffectPainter extends CustomPainter {
 
   void _glow(Canvas c, Offset at, double radius, Color color, double alpha) {
     if (alpha <= 0) return;
+    // Clarão seco: um disco chapado, sem halo.
     c.drawCircle(
       at,
-      radius,
-      Paint()
-        ..shader = RadialGradient(
-          colors: [
-            color.withValues(alpha: alpha),
-            color.withValues(alpha: 0),
-          ],
-        ).createShader(Rect.fromCircle(center: at, radius: radius)),
+      radius * 0.6,
+      Paint()..color = color.withValues(alpha: 0.35 * alpha),
     );
   }
 
@@ -446,21 +426,7 @@ class EffectPainter extends CustomPainter {
       ..lineTo(-len * 0.05, -len * 0.09)
       ..lineTo(-len * 0.05, len * 0.09)
       ..close();
-    c.drawPath(
-      blade,
-      Paint()
-        ..color = color.withValues(alpha: 0.5)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-    );
-    c.drawPath(
-      blade,
-      Paint()
-        ..shader =
-            const LinearGradient(colors: [Color(0xFF9E9E9E), Color(0xFFF5F5F5)])
-                .createShader(
-                  Rect.fromLTWH(-len * 0.05, -len * 0.1, len * 0.55, len * 0.2),
-                ),
-    );
+    c.drawPath(blade, Paint()..color = const Color(0xFFF3E9DF));
     // Guarda e cabo.
     c.drawRRect(
       RRect.fromRectAndRadius(

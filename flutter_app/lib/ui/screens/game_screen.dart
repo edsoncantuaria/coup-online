@@ -256,7 +256,7 @@ class _GameScreenState extends State<GameScreen> {
                     key: ValueKey(cue.cue),
                     style: TvType.credit(
                       12,
-                      color: cue.hot ? Tv.carmine : Tv.creditDim,
+                      color: cue.hot ? Tv.carmineText : Tv.creditDim,
                       weight: FontWeight.w700,
                     ),
                   ),
@@ -487,7 +487,7 @@ class _CurseStrip extends StatelessWidget {
       children: [
         Text(
           (curse ? 'Punição' : 'Bênção').toUpperCase(),
-          style: TvType.credit(10, color: curse ? Tv.carmine : Tv.proven),
+          style: TvType.credit(11, color: curse ? Tv.carmineText : Tv.proven),
         ),
         const SizedBox(height: 2),
         Text(name, style: TvType.name(20)),

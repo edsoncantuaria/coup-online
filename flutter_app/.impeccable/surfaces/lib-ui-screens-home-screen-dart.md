@@ -11,18 +11,17 @@ Scope: every screen of the Flutter app. Visitor mode: Experience (the player is 
 
 ## Direction contract
 
-THESIS: Every match is a chapter of a primetime palace telenovela: claims are cast credits, challenges are freeze-frame cliffhangers, reveals are hard cuts. Refuses the category default of gold-on-parchment medieval card-game chrome, embers and crests.
+Chosen by the owner on 2026-10-08: "Caixas de fósforo" (dealt challenger vernacular-ephemera-matchbook-drawer), replacing the assigned Novela build.
 
-OWN-WORLD: Broadcast black tinted plum as ground; character portraits as full-bleed close-ups graded plum-to-warm; one hot carmine reserved for the cliffhanger (challenge, freeze, danger); warm white credits. Bodoni Moda italic for names and title cards, Archivo Narrow caps for credits, labels and numbers. Letterbox bars, lower-third credit bars with a hairline rule, chapter cards. No cards-as-containers, no gradients on text, no glows.
+THESIS: Every table is a drawer of night-club matchbooks: each rival is a club cover, influence is matches that burn down, and a challenge is the strike. Refuses gold-on-parchment medieval card-game chrome, embers and crests.
 
-STORY: The player always knows whose scene it is and who claims what, feels the tension spike on every claim, and acts within seconds; results cut straight to the next chapter.
+OWN-WORLD: Drawer black as ground; club covers in oxblood, bottle green, navy and brown; gold foil reserved for script titles and the active pick; the striker strip (grey diagonal grain) banding cover edges and carrying caps text like the club's phone number; match-head red for danger. Yellowtail script for titles only, Archivo Narrow for names, caps labels and numbers. Character art printed as the cover portrait. No glows, no gradient text, no nested cards.
 
-FIRST VIEWPORT: Home is a cold open: one character close-up fills the screen behind letterbox bars, slowly pushing in, recast each visit. The title card "Intriga" sits in the lower third in Bodoni italic. Below it, menu items are set as credit lines; the campaign's next chapter is the primary action, full width, carmine. Table: the rivals are a cast strip at the top. The current actor gets a close-up band, claims land as lower-thirds, and the player's hand sits at the bottom with one Agir action.
+STORY: The player always knows whose turn it is and who claimed what, watches matches burn as influence is lost, and acts within seconds; results flow straight into the next match or court.
 
-FORM: telenovela opening and cliffhanger grammar, candidate 3 of 7 on the ordered list, seed key 9782cf13.
-Raised by bioluminescent wake: claims leave fading traces on each cast portrait, so the table remembers who said what.
-Raised by VU meter bridge: coins and threat move with mass and overshoot, never instantly.
-Raised by cyclorama dawn: each phase (Ação, Desafio, Bloqueio, Revelação) is a named lighting cue on the letterbox, never colour alone.
-Raised by ASCII scene: one strict grid governs every screen.
+FIRST VIEWPORT: Home: one character portrait printed as the cover (recast each visit, slow push-in), the foil script "Intriga" with the tagline on a striker strip, the campaign as the oxblood primary button with its own striker edge, other modes as plain lines. Table: rivals as a row of small club covers (name, matches, coins, last-claim portrait, a striker strip carrying their state); the centre shows the claimant's portrait with a caps credit; the hand and Agir at the bottom.
+
+FORM: matchbook drawer grammar, dealt challenger 4, seed key 9782cf13.
+Kept from the earlier build: claims leave fading traces on each rival cover; coins move with overshoot; each phase is a named cue on a striker strip, never colour alone; the challenge resolves as a greyscale freeze with a one-frame strike flash.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

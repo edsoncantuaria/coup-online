@@ -231,7 +231,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
             status.toUpperCase(),
             style: TvType.credit(
               11,
-              color: hub.connection.connected ? Tv.proven : Tv.carmine,
+              color: hub.connection.connected ? Tv.proven : Tv.carmineText,
               weight: FontWeight.w700,
             ),
           ),
@@ -269,7 +269,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Procurando elenco…', style: TvType.title(36)),
+          Text('Procurando a mesa…', style: TvType.title(36)),
           const SizedBox(height: 8),
           Text(
             [
@@ -390,7 +390,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('ESTRELANDO', style: TvType.credit(11)),
+        Text('NA MESA COMO', style: TvType.credit(11)),
         const SizedBox(height: 2),
         Row(
           children: [
@@ -429,7 +429,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
             'ENTRAR',
             style: TvType.credit(
               11,
-              color: Tv.carmine,
+              color: Tv.carmineText,
               weight: FontWeight.w700,
             ),
           ),
@@ -693,7 +693,7 @@ class _AccountSheetState extends State<_AccountSheet> {
                   _error!,
                   style: const TextStyle(
                     fontFamily: TvType.sans,
-                    color: Tv.carmine,
+                    color: Tv.carmineText,
                   ),
                 ),
               ],

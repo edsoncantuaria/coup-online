@@ -5,24 +5,25 @@ import 'package:flutter/material.dart';
 import '../../engine/models.dart';
 import '../theme.dart';
 
-/// Peças do mundo "novela": closes, letterbox, créditos e cartões de título.
+/// Peças do mundo "caixas de fósforo": capas com retrato, a lixa nas
+/// bordas, letreiros em script dourado e os palitos da influência.
 
 /// Onde fica o rosto de cada retrato (as artes têm uma faixa de pergaminho
 /// embaixo, que o close sempre deixa de fora).
 Alignment faceOf(Role r) => switch (r) {
   Role.duke => const Alignment(0.0, -0.62),
   Role.assassin => const Alignment(0.0, -0.55),
-  Role.captain => const Alignment(-0.24, -0.66),
+  Role.captain => const Alignment(-0.5, -0.66),
   Role.ambassador => const Alignment(0.0, -0.62),
   Role.contessa => const Alignment(0.04, -0.66),
 };
 
-/// Gradação da novela: tira um pouco da saturação e puxa as sombras para o
-/// ameixa, para todos os retratos parecerem do mesmo capítulo.
+/// Gradação de impressão de capa: tira saturação e esquenta, como tinta
+/// em papel de caixinha, para todos os retratos parecerem da mesma gaveta.
 const _grade = ColorFilter.matrix([
-  0.86, 0.10, 0.04, 0, 6, //
-  0.06, 0.80, 0.06, 0, -2, //
-  0.06, 0.08, 0.84, 0, 8, //
+  0.90, 0.12, 0.02, 0, 8, //
+  0.08, 0.82, 0.04, 0, 2, //
+  0.04, 0.10, 0.70, 0, -4, //
   0, 0, 0, 1, 0,
 ]);
 
@@ -164,42 +165,85 @@ class _PushInCloseUpState extends State<PushInCloseUp>
   );
 }
 
-/// Faixa preta do letterbox, com a deixa da cena (fase do jogo) escrita nela.
+/// A lixa da caixa de fósforo: faixa cinza com grão diagonal. Serve de
+/// borda das capas e de faixa de deixa da fase.
+class StrikerStrip extends StatelessWidget {
+  const StrikerStrip({super.key, this.height = 8, this.color = Tv.striker});
+  final double height;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: height,
+    width: double.infinity,
+    child: CustomPaint(painter: _StrikerPainter(color)),
+  );
+}
+
+class _StrikerPainter extends CustomPainter {
+  _StrikerPainter(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = color);
+    final grain = Paint()
+      ..color = Color.lerp(color, Colors.black, 0.22)!
+      ..strokeWidth = 1;
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    for (var x = -size.height; x < size.width; x += 4) {
+      canvas.drawLine(
+        Offset(x, size.height),
+        Offset(x + size.height, 0),
+        grain,
+      );
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_StrikerPainter old) => old.color != color;
+}
+
+/// Faixa de lixa com a deixa da fase escrita nela, como o telefone do clube
+/// na borda da caixinha. [hot] (desafio, bloqueio) vira a cabeça do palito.
 class LetterboxBar extends StatelessWidget {
   const LetterboxBar({super.key, this.cue, this.height = 28, this.hot = false});
 
   /// Nome da deixa ("AÇÃO", "DESAFIO"...). Nunca só a cor carrega a fase.
   final String? cue;
   final double height;
-
-  /// Deixa quente (desafio, bloqueio): o texto vira carmim.
   final bool hot;
 
   @override
-  Widget build(BuildContext context) => AnimatedContainer(
-    duration: const Duration(milliseconds: 220),
+  Widget build(BuildContext context) => SizedBox(
     height: height,
-    color: Colors.black,
-    alignment: Alignment.center,
-    child: cue == null
-        ? null
-        : AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
-            child: Text(
-              cue!,
-              key: ValueKey(cue),
-              style: TvType.credit(
-                11,
-                color: hot ? Tv.carmine : Tv.creditMuted,
-                weight: FontWeight.w700,
+    child: Stack(
+      fit: StackFit.expand,
+      children: [
+        StrikerStrip(height: height, color: hot ? Tv.carmine : Tv.striker),
+        if (cue != null)
+          Center(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 120),
+              child: Text(
+                cue!,
+                key: ValueKey(cue),
+                style: TvType.credit(
+                  11,
+                  color: Tv.credit,
+                  weight: FontWeight.w700,
+                ),
               ),
             ),
           ),
+      ],
+    ),
   );
 }
 
-/// Linha de crédito tocável: o título em Bodoni itálico e uma linha de
-/// crédito em caixa alta embaixo. É o "botão" do mundo novela.
+/// Linha tocável: o nome em Archivo e uma linha em caixa alta embaixo.
 class CreditLine extends StatelessWidget {
   const CreditLine({
     super.key,
@@ -219,12 +263,12 @@ class CreditLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final enabled = onTap != null;
     return Semantics(
-      button: true,
+      button: enabled,
       enabled: enabled,
       child: InkWell(
         onTap: onTap,
-        splashColor: Tv.carmine.withValues(alpha: 0.18),
-        highlightColor: Tv.carmine.withValues(alpha: 0.08),
+        splashColor: Tv.foil.withValues(alpha: 0.14),
+        highlightColor: Tv.foil.withValues(alpha: 0.06),
         child: Container(
           constraints: const BoxConstraints(minHeight: 56),
           padding: const EdgeInsets.symmetric(vertical: 10),
@@ -241,7 +285,7 @@ class CreditLine extends StatelessWidget {
                     Text(
                       title,
                       style: TvType.name(
-                        size,
+                        size * 0.8,
                         color: enabled ? Tv.credit : Tv.creditMuted,
                       ),
                     ),
@@ -261,8 +305,8 @@ class CreditLine extends StatelessWidget {
   }
 }
 
-/// Crédito de "lower third": nome em itálico sobre o papel em caixa alta,
-/// com um fio fino em cima. Usado para cada declaração na mesa.
+/// Crédito sob um retrato: nome sobre o papel em caixa alta, com um fio em
+/// cima. Usado para cada declaração na mesa.
 class LowerThird extends StatelessWidget {
   const LowerThird({
     super.key,
@@ -281,7 +325,7 @@ class LowerThird extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.start,
     mainAxisSize: MainAxisSize.min,
     children: [
-      Container(width: 40, height: 1, color: roleColor),
+      Container(width: 40, height: 2, color: roleColor),
       const SizedBox(height: 6),
       Text(name, style: TvType.name(nameSize)),
       const SizedBox(height: 2),
@@ -293,7 +337,8 @@ class LowerThird extends StatelessWidget {
   );
 }
 
-/// Ação principal da tela: retângulo carmim, rótulo em caixa alta.
+/// Ação principal da tela: uma capa vinho com o rótulo em dourado e a lixa
+/// na borda de baixo.
 class CueButton extends StatelessWidget {
   const CueButton({
     super.key,
@@ -306,23 +351,155 @@ class CueButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final IconData? icon;
 
-  /// Versão secundária: só o contorno em branco quente.
+  /// Versão secundária: só o contorno da lixa, rótulo em papel.
   final bool quiet;
 
   @override
   Widget build(BuildContext context) {
-    final child = Row(
+    final enabled = onPressed != null;
+    final fg = quiet
+        ? (enabled ? Tv.credit : Tv.creditMuted)
+        : (enabled ? Tv.foil : Tv.creditMuted);
+    final label = Row(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        if (icon != null) ...[Icon(icon, size: 20), const SizedBox(width: 8)],
-        Flexible(child: Text(label.toUpperCase(), maxLines: 1)),
+        if (icon != null) ...[
+          Icon(icon, size: 20, color: fg),
+          const SizedBox(width: 8),
+        ],
+        Flexible(
+          child: Text(
+            this.label.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TvType.credit(15, color: fg, weight: FontWeight.w700),
+          ),
+        ),
       ],
     );
-    return quiet
-        ? OutlinedButton(onPressed: onPressed, child: child)
-        : FilledButton(onPressed: onPressed, child: child);
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      child: Material(
+        color: quiet
+            ? Colors.transparent
+            : (enabled ? Tv.oxblood : Tv.stageHigh),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(3),
+          side: quiet
+              ? const BorderSide(color: Tv.striker, width: 1.5)
+              : BorderSide.none,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          splashColor: Tv.foil.withValues(alpha: 0.16),
+          child: SizedBox(
+            height: 56,
+            child: Column(
+              children: [
+                Expanded(child: Center(child: label)),
+                if (!quiet) const StrikerStrip(height: 6),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
+}
+
+/// Um palito de fósforo: inteiro (influência viva) ou queimado (perdida).
+/// [mark] escreve a inicial do papel no pé do palito quando ele é conhecido.
+class MatchStick extends StatelessWidget {
+  const MatchStick({
+    super.key,
+    this.burnt = false,
+    this.height = 26,
+    this.mark,
+    this.markColor = Tv.credit,
+  });
+  final bool burnt;
+  final double height;
+  final String? mark;
+  final Color markColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final stick = CustomPaint(painter: _MatchPainter(burnt: burnt));
+    if (mark == null) {
+      return SizedBox(width: height * 0.36, height: height, child: stick);
+    }
+    final markSize = (height * 0.32).clamp(9.0, 13.0);
+    return SizedBox(
+      width: max(height * 0.36, markSize),
+      height: height,
+      child: Column(
+        children: [
+          Expanded(
+            child: SizedBox(width: height * 0.36, child: stick),
+          ),
+          Text(
+            mark!,
+            style: TvType.credit(
+              markSize,
+              color: markColor,
+              weight: FontWeight.w700,
+            ).copyWith(letterSpacing: 0, height: 1.1),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MatchPainter extends CustomPainter {
+  _MatchPainter({required this.burnt});
+  final bool burnt;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final stickW = w * 0.42;
+    final cx = w / 2;
+    final headH = h * 0.24;
+    if (burnt) {
+      // Queimado: só sobra metade, curvada e preta, com a cabeça em cinza.
+      final path = Path()
+        ..moveTo(cx - stickW / 2, h)
+        ..lineTo(cx - stickW / 2, h * 0.55)
+        ..quadraticBezierTo(cx - stickW / 2, h * 0.38, cx + stickW, h * 0.32)
+        ..lineTo(cx + stickW, h * 0.32 + stickW)
+        ..quadraticBezierTo(cx + stickW / 2, h * 0.45, cx + stickW / 2, h * 0.6)
+        ..lineTo(cx + stickW / 2, h)
+        ..close();
+      canvas.drawPath(path, Paint()..color = Tv.char);
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = Tv.creditMuted
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1,
+      );
+      return;
+    }
+    canvas.drawRect(
+      Rect.fromLTWH(cx - stickW / 2, headH * 0.6, stickW, h - headH * 0.6),
+      Paint()..color = const Color(0xFFE8D3A8),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, 0, w, headH),
+        Radius.circular(w / 2),
+      ),
+      Paint()..color = Tv.carmine,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_MatchPainter old) => old.burnt != burnt;
 }
 
 /// Moedas com movimento de ponteiro: o número corre até o valor novo com um
