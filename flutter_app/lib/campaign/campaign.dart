@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../engine/bot.dart';
 import '../engine/house_rules.dart';
 import '../engine/models.dart';
 
@@ -15,11 +16,29 @@ const campaignHumanId = 'human-1';
 // ------------------------------------------------------------------ cortes
 
 class Court {
-  const Court(this.name, this.bots, this.personalities, {this.curses = 1});
+  const Court(
+    this.name,
+    this.bots,
+    this.personalities, {
+    this.curses = 1,
+    this.skill = BotSkill.normal,
+    this.hardBots = 0,
+  });
   final String name;
   final int bots;
   final List<BotPersonality> personalities;
   final int curses;
+
+  /// Nível dos rivais desta corte.
+  final BotSkill skill;
+
+  /// Quantos rivais jogam no Difícil, a elite da corte.
+  final int hardBots;
+
+  /// Nível de cada rival, na ordem dos assentos.
+  List<BotSkill> skillsFor(int count) => [
+    for (var i = 0; i < count; i++) i < hardBots ? BotSkill.hard : skill,
+  ];
 }
 
 const _easy = [BotPersonality.cautious, BotPersonality.balanced];
@@ -32,13 +51,13 @@ const _hard = [
 
 /// As sete cortes da campanha, da vila ao trono.
 const courts = [
-  Court('Vila de Pedra', 1, _easy),
-  Court('Taverna do Porto', 2, _easy),
+  Court('Vila de Pedra', 1, _easy, skill: BotSkill.easy),
+  Court('Taverna do Porto', 2, _easy, skill: BotSkill.easy),
   Court('Mercado de Sedas', 2, _all),
   Court('Mosteiro Sombrio', 3, _all),
-  Court('Fortaleza do Norte', 3, _hard),
-  Court('Salão dos Espelhos', 3, _hard),
-  Court('Trono de Ferro', 4, _hard, curses: 2),
+  Court('Fortaleza do Norte', 3, _hard, hardBots: 1),
+  Court('Salão dos Espelhos', 3, _hard, hardBots: 1),
+  Court('Trono de Ferro', 4, _hard, curses: 2, hardBots: 1),
 ];
 
 // ---------------------------------------------------------------- punições
@@ -102,6 +121,7 @@ const curseInfo = {
     'Assassinar você custa só 1 moeda. Os rivais sabem disso.',
     Icons.gps_fixed,
     fromCourt: 1,
+    untilCourt: 5,
   ),
   CurseId.spies: Curse(
     CurseId.spies,
@@ -408,9 +428,13 @@ class MatchSetup {
     required this.rules,
     required this.turnSeconds,
     required this.keenEye,
+    required this.skills,
   });
 
   final int botCount;
+
+  /// Nível de cada rival.
+  final List<BotSkill> skills;
   final List<BotPersonality> personalities;
   final HouseRules rules;
   final int turnSeconds;
@@ -459,6 +483,7 @@ class MatchSetup {
     return MatchSetup(
       botCount: bots,
       personalities: personalities,
+      skills: c.skillsFor(bots),
       turnSeconds: run.hasCurse(CurseId.shortClock) ? 12 : 30,
       keenEye: run.has(BlessingId.keenEye),
       rules: HouseRules(

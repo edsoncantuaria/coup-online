@@ -18,6 +18,8 @@ class LocalGameController extends GameController {
     this.turnSeconds = 30,
     this.houseRules = HouseRules.standard,
     this.keenEye = false,
+    this.skill = BotSkill.normal,
+    this.skills,
     Random? random,
   }) : _rng = random ?? Random() {
     _newMatch();
@@ -30,6 +32,10 @@ class LocalGameController extends GameController {
   final int turnSeconds;
   final HouseRules houseRules;
   final bool keenEye;
+
+  /// Nível dos bots; [skills], se houver, define um por assento.
+  final BotSkill skill;
+  final List<BotSkill>? skills;
   final Random _rng;
   final Map<String, Role> _peeks = {};
   String? _notice;
@@ -103,7 +109,15 @@ class LocalGameController extends GameController {
         _peeks[p.id] = p.cards[_rng.nextInt(p.cards.length)].role;
       }
     }
-    _brain = BotBrain(_engine, random: _rng);
+    _brain = BotBrain(
+      _engine,
+      random: _rng,
+      defaultSkill: skill,
+      skills: {
+        for (var i = 0; i < (skills?.length ?? 0) && i < botCount; i++)
+          'bot-$i': skills![i],
+      },
+    );
     _afterMutation(initial: true);
   }
 
@@ -113,6 +127,7 @@ class LocalGameController extends GameController {
     _botTimer?.cancel();
     _stopClock();
     _busy = true;
+    _brain.observe();
     final shields = _engine.shieldsLeft[humanId] ?? 0;
     if (shields < _shields) {
       _notice = 'O Véu da Condessa protegeu você de perder uma influência!';

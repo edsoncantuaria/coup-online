@@ -93,6 +93,7 @@ class _CampaignScreenState extends State<CampaignScreen> {
       turnSeconds: setup.turnSeconds,
       houseRules: setup.rules,
       keenEye: setup.keenEye,
+      skills: setup.skills,
       random: _rng,
     );
     final won = await Navigator.of(context).push<bool>(
@@ -292,7 +293,8 @@ class _NextCourt extends StatelessWidget {
           ),
         ),
         Text(
-          '$rivals rival${rivals == 1 ? '' : 'is'} · '
+          '$rivals rival${rivals == 1 ? '' : 'is'}'
+          '${court.hardBots > 0 ? ' (${court.hardBots} de elite)' : ''} · '
           '${run.curses.length == 1 ? 'punição sorteada' : 'punições sorteadas'}',
           textAlign: TextAlign.center,
           style: const TextStyle(color: CoupColors.textSecondary),

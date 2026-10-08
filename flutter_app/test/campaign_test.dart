@@ -20,7 +20,14 @@ bool simulate(MatchSetup setup, Random rng) {
     );
   }
   e.startGame();
-  final brain = BotBrain(e, random: rng);
+  // O humano é simulado pelo bot Normal; os rivais jogam no nível da corte.
+  final brain = BotBrain(
+    e,
+    random: rng,
+    skills: {
+      for (var i = 0; i < setup.botCount; i++) 'bot-$i': setup.skills[i],
+    },
+  );
   for (var steps = 0; steps < 5000; steps++) {
     if (e.state.phase == Phase.gameOver) break;
     final actor = BotBrain.pendingActor(e.state);

@@ -23,6 +23,25 @@ class Settings {
     }
   }
 
+  static const _kSkill = 'botSkill';
+
+  /// Nível dos bots escolhido por último (nome do enum).
+  static Future<String?> loadSkill() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      return p.getString(_kSkill);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> saveSkill(String skill) async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setString(_kSkill, skill);
+    } catch (_) {}
+  }
+
   static Future<void> save({String? name, String? server}) async {
     try {
       final p = await SharedPreferences.getInstance();

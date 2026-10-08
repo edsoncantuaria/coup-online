@@ -31,6 +31,16 @@ ou encerra a campanha. Punições, bênçãos e cortes ficam em
 de partidas para garantir que nenhuma punição deixe a corte impossível; rode
 com `--dart-define=CALIBRATE=true` para ver a tabela de taxas de vitória.
 
+## Níveis dos bots
+
+Fácil, Normal e Difícil, escolhidos na Partida Livre. O Difícil
+(`lib/engine/bot_tracker.dart`) lembra de cada declaração da mesa, conta as
+cartas já reveladas e estima a chance de cada rival ter o personagem que diz
+ter; desafia, bloqueia e blefa pesando esse risco. Na campanha, as cortes 1 e
+2 têm rivais Fáceis e as cortes 5 a 7 têm um rival Difícil. O teste
+`test/bot_skill_test.dart` faz um torneio simulado e exige que o Difícil vença
+os outros níveis.
+
 ## Chat de voz
 
 Nas salas online, o ícone de fone na barra superior entra no chat de voz

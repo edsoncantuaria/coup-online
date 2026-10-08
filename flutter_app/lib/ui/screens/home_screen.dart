@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../engine/bot.dart';
 import '../../engine/labels.dart';
 import '../../engine/models.dart';
 import '../../game/local_game_controller.dart';
@@ -23,6 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _server = defaultServerUrl;
   int _bots = 3;
   BotPersonality? _personality; // null = sortear
+  BotSkill _skill = BotSkill.normal;
 
   @override
   void initState() {
@@ -34,6 +36,11 @@ class _HomeScreenState extends State<HomeScreen> {
         _server = v.$2;
       });
     });
+    Settings.loadSkill().then((v) {
+      final skill = BotSkill.values.where((s) => s.name == v).firstOrNull;
+      if (!mounted || skill == null) return;
+      setState(() => _skill = skill);
+    });
   }
 
   String get _playerName =>
@@ -44,6 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final controller = LocalGameController(
       playerName: _playerName,
       botCount: _bots,
+      skill: _skill,
       personalities: _personality == null
           ? null
           : List.filled(_bots, _personality!),
@@ -172,6 +180,44 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ],
                         ),
+                        SegmentedButton<BotSkill>(
+                          showSelectedIcon: false,
+                          segments: [
+                            for (final s in BotSkill.values)
+                              ButtonSegment(
+                                value: s,
+                                label: Text(s.label),
+                                icon: Icon(switch (s) {
+                                  BotSkill.easy => Icons.sentiment_satisfied,
+                                  BotSkill.normal => Icons.psychology_outlined,
+                                  BotSkill.hard => Icons.local_fire_department,
+                                }),
+                              ),
+                          ],
+                          selected: {_skill},
+                          onSelectionChanged: (v) {
+                            setState(() => _skill = v.first);
+                            Settings.saveSkill(v.first.name);
+                          },
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          switch (_skill) {
+                            BotSkill.easy =>
+                              'Bots distraídos, bons para aprender.',
+                            BotSkill.normal =>
+                              'Bots que lembram do que foi provado na mesa.',
+                            BotSkill.hard =>
+                              'Contam cartas, lembram de cada blefe e '
+                                  'calculam o risco.',
+                          },
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.6),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
                         Wrap(
                           spacing: 6,
                           runSpacing: 6,
