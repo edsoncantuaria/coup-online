@@ -8,6 +8,7 @@ import '../../game/game_controller.dart';
 import '../../game/online_game_controller.dart';
 import '../../game/voice_chat.dart';
 import '../../online/online_hub.dart';
+import '../sounds.dart';
 import '../theme.dart';
 import '../widgets/card_effects.dart';
 import '../widgets/my_panel.dart';
@@ -38,6 +39,8 @@ class _GameScreenState extends State<GameScreen> {
   GameController get c => widget.controller;
   int? _lastInvalidStamp;
   bool _wasMyDecision = false;
+  bool _wasOver = false;
+  int? _lastTick;
   VoiceChat? _voice;
   final _anchors = SeatAnchors();
   final _traces = ClaimTraces();
@@ -73,11 +76,15 @@ class _GameScreenState extends State<GameScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final notice = c.takeNotice();
     if (notice != null) {
-      messenger.showSnackBar(SnackBar(content: Text(notice)));
+      // Aviso novo substitui o anterior, em vez de entrar numa fila.
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text(notice)));
     }
     final inv = c.state?.lastInvalid;
     if (inv != null && inv.stamp != _lastInvalidStamp) {
       _lastInvalidStamp = inv.stamp;
+      messenger.clearSnackBars();
       messenger.showSnackBar(
         SnackBar(
           content: Text(
@@ -96,8 +103,26 @@ class _GameScreenState extends State<GameScreen> {
       _traces.observe(s);
     }
     final mine = c.isMyDecision;
-    if (mine && !_wasMyDecision) HapticFeedback.mediumImpact();
+    if (mine && !_wasMyDecision) {
+      HapticFeedback.mediumImpact();
+      Sounds.instance.play(Sfx.turn);
+    }
     _wasMyDecision = mine;
+    // Os últimos segundos do relógio batem na mesa.
+    final left = c.turnTimer;
+    if (mine && left != null && left <= 5 && left > 0 && left != _lastTick) {
+      Sounds.instance.play(Sfx.tick);
+    }
+    _lastTick = left;
+    final over = s?.phase == Phase.gameOver;
+    if (over && !_wasOver && s != null) {
+      Sounds.instance.play(s.winner == c.myId ? Sfx.win : Sfx.lose);
+      // Os créditos finais têm a vez: nenhum aviso fica sobre os botões.
+      messenger
+        ..clearSnackBars()
+        ..removeCurrentSnackBar();
+    }
+    _wasOver = over;
     setState(() {});
   }
 
@@ -269,6 +294,10 @@ class _GameScreenState extends State<GameScreen> {
                   onSelected: (v) {
                     if (v == 'log') Scaffold.of(ctx).openEndDrawer();
                     if (v == 'invite') showInviteSheet(context, _hub!);
+                    if (v == 'sound') {
+                      final s = Sounds.instance;
+                      s.setEnabled(!s.enabled.value);
+                    }
                     if (v == 'rules') {
                       Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const RulesScreen()),
@@ -286,6 +315,14 @@ class _GameScreenState extends State<GameScreen> {
                         value: 'invite',
                         child: Text('Chamar amigos'),
                       ),
+                    PopupMenuItem(
+                      value: 'sound',
+                      child: Text(
+                        Sounds.instance.enabled.value
+                            ? 'Desligar o som'
+                            : 'Ligar o som',
+                      ),
+                    ),
                     const PopupMenuItem(value: 'rules', child: Text('Regras')),
                   ],
                 ),

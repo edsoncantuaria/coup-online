@@ -166,25 +166,37 @@ export class CoupEngine {
   }
 
   /**
-   * Jogador saiu no meio da partida (online): perde todas as influências e
-   * continua na lista, para não bagunçar os índices de turno. Uma jogada em
-   * aberto é cancelada e o turno segue para o próximo vivo.
+   * Jogador sai da partida: perde todas as influências e continua na lista,
+   * para não bagunçar os índices de turno. Uma jogada em aberto é cancelada
+   * e o turno segue para o próximo vivo.
+   *  - `left`: saiu da sala (deixa de receber o estado);
+   *  - `idle`: estourou o tempo vezes demais (continua assistindo).
    */
-  public forfeitPlayer(playerId: string): void {
+  public forfeitPlayer(playerId: string, reason: 'left' | 'idle' = 'left'): void {
     if (!this.gameStarted) {
       this.disconnectPlayer(playerId);
       return;
     }
     const player = this.state.players.find((p) => p.id === playerId);
     if (!player) return;
-    player.isConnected = false;
+    if (reason === 'left') player.isConnected = false;
     if (this.state.phase === 'game_over') return;
 
     const wasAlive = player.cards.some((c) => !c.isFlipped);
     player.cards.forEach((c) => {
       c.isFlipped = true;
     });
-    if (wasAlive) this.addLog(`🚪 ${player.name} abandonou a partida.`);
+    if (wasAlive) {
+      this.addLog(
+        reason === 'idle'
+          ? `⏰ ${player.name} foi eliminado por ficar sem jogar.`
+          : `🚪 ${player.name} abandonou a partida.`,
+      );
+      const stats = this.state.matchStats?.perPlayer[playerId];
+      if (stats && stats.eliminatedAtRound === undefined) {
+        stats.eliminatedAtRound = this.state.matchStats!.round;
+      }
+    }
 
     // Cartas compradas numa troca em andamento voltam para a Corte.
     if (this.state.exchangingCards?.length) {
@@ -317,6 +329,11 @@ export class CoupEngine {
 
   public getState(): GameState {
     return this.state;
+  }
+
+  /** Mensagem no registro da partida vinda de fora do motor (ex.: relógio). */
+  public note(message: string) {
+    this.addLog(message);
   }
 
   private addLog(message: string) {

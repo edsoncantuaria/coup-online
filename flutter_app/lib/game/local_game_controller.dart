@@ -7,6 +7,7 @@ import '../engine/house_rules.dart';
 import '../engine/models.dart';
 import 'bot_names.dart';
 import 'game_controller.dart';
+import 'pacing.dart';
 
 /// Partida offline: humano contra bots, motor rodando no aparelho.
 class LocalGameController extends GameController {
@@ -14,8 +15,8 @@ class LocalGameController extends GameController {
     required this.playerName,
     required this.botCount,
     this.personalities,
-    this.botDelay = const Duration(milliseconds: 1100),
-    this.turnSeconds = 30,
+    this.botDelay,
+    this.turnSeconds = Pacing.turnSeconds,
     this.houseRules = HouseRules.standard,
     this.keenEye = false,
     this.skill = BotSkill.normal,
@@ -28,7 +29,10 @@ class LocalGameController extends GameController {
   final String playerName;
   final int botCount;
   final List<BotPersonality>? personalities;
-  final Duration botDelay;
+
+  /// Atraso fixo dos bots, sem esperar as cenas (testes). Sem ele, os bots
+  /// pensam como gente e a mesa espera cada animação terminar.
+  final Duration? botDelay;
   final int turnSeconds;
   final HouseRules houseRules;
   final bool keenEye;
@@ -40,6 +44,10 @@ class LocalGameController extends GameController {
   final Map<String, Role> _peeks = {};
   String? _notice;
   int _shields = 0;
+  final _hold = SceneHold();
+
+  /// Estouros de tempo seguidos do jogador.
+  int _idle = 0;
 
   late CoupEngine _engine;
   late BotBrain _brain;
@@ -109,6 +117,8 @@ class LocalGameController extends GameController {
         _peeks[p.id] = p.cards[_rng.nextInt(p.cards.length)].role;
       }
     }
+    _idle = 0;
+    _hold.reset(state);
     _brain = BotBrain(
       _engine,
       random: _rng,
@@ -121,27 +131,48 @@ class LocalGameController extends GameController {
     _afterMutation(initial: true);
   }
 
-  /// Depois de qualquer jogada: notifica a UI, segura a mesa por um instante
-  /// para as animações e então aciona bot ou relógio do humano.
+  /// Depois de qualquer jogada: notifica a UI, segura a mesa enquanto a
+  /// cena passa e então aciona o bot (que ainda pensa um pouco) ou o
+  /// relógio do humano.
   void _afterMutation({bool initial = false}) {
     _botTimer?.cancel();
     _stopClock();
     _busy = true;
+    if (_idle >= Pacing.idleStrikes && state.phase == Phase.action) {
+      _idle = 0;
+      _engine.forfeitIdle(humanId);
+      _notice =
+          'Você deixou o tempo acabar ${Pacing.idleStrikes} vezes '
+          'seguidas e saiu da partida.';
+    }
     _brain.observe();
     final shields = _engine.shieldsLeft[humanId] ?? 0;
     if (shields < _shields) {
       _notice = 'O Véu da Condessa protegeu você de perder uma influência!';
     }
     _shields = shields;
+    final hold = _hold.next(state);
     notifyListeners();
     _botTimer = Timer(
-      initial ? const Duration(milliseconds: 600) : botDelay,
+      initial ? const Duration(milliseconds: 600) : _wait(hold),
       () {
         if (_disposed) return;
         _busy = false;
         _step();
       },
     );
+  }
+
+  /// Quanto esperar até a próxima jogada: a cena e, se for a vez de um bot,
+  /// o tempo que ele pensa (escolher a ação já cobre a cena anterior).
+  Duration _wait(Duration hold) {
+    final fixed = botDelay;
+    if (fixed != null) return fixed;
+    final actor = state.playerById(BotBrain.pendingActor(state));
+    if (actor == null || !actor.isBot) return hold;
+    final think = Pacing.think(state.phase, _rng);
+    if (state.phase == Phase.action) return think > hold ? think : hold;
+    return hold + think;
   }
 
   void _step() {
@@ -169,7 +200,17 @@ class LocalGameController extends GameController {
       final left = (_turnTimer ?? 0) - 1;
       if (left <= 0) {
         _stopClock();
-        // Tempo esgotado: a IA decide pelo jogador.
+        // Tempo esgotado: conta um aviso e a IA decide pelo jogador.
+        _idle += 1;
+        final name = state.playerById(humanId)?.name ?? 'Jogador';
+        _engine.note(
+          '⏰ Tempo esgotado para $name ($_idle/${Pacing.idleStrikes}).',
+        );
+        if (_idle < Pacing.idleStrikes) {
+          _notice =
+              'Tempo esgotado ($_idle/${Pacing.idleStrikes}). '
+              'Na ${Pacing.idleStrikes}ª vez seguida você sai da partida.';
+        }
         if (_brain.playFor(humanId)) _afterMutation();
         return;
       }
@@ -184,7 +225,12 @@ class LocalGameController extends GameController {
     _turnTimer = null;
   }
 
-  bool get _canAct => !_busy && !_disposed;
+  /// Jogou por conta própria: zera os estouros de tempo.
+  bool get _canAct {
+    if (_busy || _disposed) return false;
+    _idle = 0;
+    return true;
+  }
 
   @override
   void sendAction(GameAction action) {

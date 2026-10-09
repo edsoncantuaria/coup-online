@@ -6,6 +6,7 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../engine/models.dart';
 import '../online/online_connection.dart';
 import 'game_controller.dart';
+import 'pacing.dart';
 
 /// Partida online contra o servidor Node (`/server`, socket.io).
 ///
@@ -35,6 +36,14 @@ class OnlineGameController extends GameController {
   String? _notice;
   bool _disposed = false;
   Map<String, String> _accounts = const {};
+
+  /// Relógio da minha vez, convertido para o relógio do aparelho: a mesa
+  /// fica travada até [_clockStart] (a cena ainda passa) e a decisão vale
+  /// até [_clockEnd].
+  DateTime? _clockStart;
+  DateTime? _clockEnd;
+  Timer? _tick;
+  String? _lastLog;
 
   String get serverUrl => connection.serverUrl;
 
@@ -72,6 +81,74 @@ class OnlineGameController extends GameController {
 
   @override
   bool get started => _started;
+
+  @override
+  int get turnTimerTotal => Pacing.turnSeconds;
+
+  @override
+  int? get turnTimer {
+    final start = _clockStart;
+    final end = _clockEnd;
+    if (start == null || end == null) return null;
+    final now = DateTime.now();
+    if (now.isBefore(start)) return null;
+    final left = (end.difference(now).inMilliseconds / 1000).ceil();
+    return left.clamp(0, Pacing.turnSeconds);
+  }
+
+  @override
+  bool get busy {
+    final start = _clockStart;
+    return start != null && DateTime.now().isBefore(start);
+  }
+
+  void _setClock(Object? raw) {
+    _tick?.cancel();
+    _tick = null;
+    _clockStart = null;
+    _clockEnd = null;
+    if (raw is! Map || raw['playerId'] != myId) return;
+    final now = DateTime.now();
+    _clockStart = now.add(
+      Duration(milliseconds: (raw['startInMs'] as num?)?.toInt() ?? 0),
+    );
+    _clockEnd = now.add(
+      Duration(milliseconds: (raw['endInMs'] as num?)?.toInt() ?? 0),
+    );
+    _tick = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      if (_disposed) return;
+      if (DateTime.now().isAfter(_clockEnd!)) {
+        _tick?.cancel();
+        _tick = null;
+      }
+      notifyListeners();
+    });
+  }
+
+  /// Avisa quando o meu tempo esgota (o servidor anota no registro).
+  void _noticeTimeouts(GameState s) {
+    final me = s.playerById(myId)?.name;
+    // O servidor guarda só as últimas linhas: o que é novo vem depois da
+    // última linha que já tínhamos visto.
+    final last = _lastLog;
+    final at = last == null ? -1 : s.logs.lastIndexOf(last);
+    final fresh = last == null
+        ? const <String>[]
+        : s.logs.sublist(at < 0 ? 0 : at + 1);
+    _lastLog = s.logs.isEmpty ? last : s.logs.last;
+    if (me == null) return;
+    for (final line in fresh) {
+      final m = RegExp(r'Tempo esgotado para (.+) \((\d+)/(\d+)\)')
+          .firstMatch(line);
+      if (m != null && m.group(1) == me) {
+        _notice =
+            'Tempo esgotado (${m.group(2)}/${m.group(3)}). '
+            'Na ${m.group(3)}ª vez seguida você sai da partida.';
+      } else if (line.contains('$me foi eliminado por ficar sem jogar')) {
+        _notice = 'Você deixou o tempo acabar vezes demais e saiu da partida.';
+      }
+    }
+  }
 
   @override
   String? takeNotice() {
@@ -120,6 +197,8 @@ class OnlineGameController extends GameController {
       if (data is! Map) return;
       _state = GameState.fromJson(data);
       _roomCode = _state!.roomId;
+      _setClock(data['turnClock']);
+      _noticeTimeouts(_state!);
       final players = data['players'];
       if (players is List) {
         _accounts = {
@@ -212,6 +291,7 @@ class OnlineGameController extends GameController {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _tick?.cancel();
     for (final u in _unlisteners) {
       u();
     }

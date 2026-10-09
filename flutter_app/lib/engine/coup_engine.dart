@@ -158,6 +158,28 @@ class CoupEngine {
     _addLog('Turno de ${currentPlayer.name}');
   }
 
+  /// Mensagem no registro vinda de fora do motor (relógio do turno).
+  void note(String message) => _addLog(message);
+
+  /// Elimina quem deixou o tempo acabar vezes demais. Só entre jogadas
+  /// (fase de ação), para não cancelar a jogada de mais ninguém.
+  void forfeitIdle(String playerId) {
+    if (state.phase != Phase.action) return;
+    final p = state.playerById(playerId);
+    if (p == null || !p.isAlive) return;
+    for (final c in p.cards) {
+      c.isFlipped = true;
+    }
+    _addLog('⏰ ${p.name} foi eliminado por ficar sem jogar.');
+    final s = _stats(playerId);
+    if (s != null) s.eliminatedAtRound ??= state.matchStats!.round;
+    if (currentPlayer.id == playerId) {
+      nextTurn();
+    } else {
+      _checkWinner();
+    }
+  }
+
   void _adjustTurnIndexAfterRemove(int removedIdx) {
     if (state.players.isEmpty) return;
     if (removedIdx < state.turnIndex) {

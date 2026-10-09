@@ -4,8 +4,32 @@ import { BotManager } from '../engine/BotManager.js';
 import type { Action, BotPersonality, GameState, Role } from '../engine/types.js';
 import { AppError, cleanText } from '../errors.js';
 
-/** Tempo máximo para um humano decidir antes da IA jogar por ele. */
-const HUMAN_TIMEOUT_MS = 45_000;
+/** Tempo para um humano decidir antes da IA jogar por ele. */
+export const HUMAN_TIMEOUT_MS = 30_000;
+/** Estouros de tempo seguidos que eliminam o jogador. */
+export const IDLE_STRIKES = 3;
+
+/**
+ * Quanto a mesa espera a cena terminar no aparelho antes da próxima jogada
+ * (os mesmos tempos das animações do app: congelamento do desafio e da
+ * perda, efeito da carta e do bloqueio).
+ */
+const HOLD_FREEZE_MS = 3_400;
+const HOLD_EFFECT_MS = 2_600;
+const HOLD_BLOCK_MS = 2_400;
+
+/** Quanto um bot "pensa": escolher a ação demora, reagir é rápido. */
+const BOT_THINK_MS: Record<string, [number, number]> = {
+  action: [5_000, 10_000],
+  challenge: [1_500, 3_000],
+  block: [1_500, 3_000],
+  losing_influence: [1_500, 2_500],
+  exchanging: [2_000, 3_500],
+};
+
+function between([min, max]: [number, number]) {
+  return Math.round(min + Math.random() * (max - min));
+}
 export const MAX_PLAYERS = 6;
 /** Convite de amigo vale por este tempo. */
 const INVITE_TTL_MS = 10 * 60 * 1000;
@@ -37,6 +61,12 @@ type RoomEntry = {
   invites: Map<string, number>;
   /** Última situação avisada aos amigos (partida rolando ou não). */
   wasActive: boolean;
+  /** Estouros de tempo seguidos de cada jogador humano. */
+  idle: Map<string, number>;
+  /** Marcas dos últimos eventos já vistos, para saber quanto segurar a mesa. */
+  seen: { reveal?: number; loss?: number; resolved?: number; block?: string };
+  /** Relógio do humano da vez, em tempo do servidor. */
+  clock?: { playerId: string; startAt: number; endAt: number };
 };
 
 /** Um jogador com quem o socket dividiu a mesa recentemente. */
@@ -99,7 +129,10 @@ export class RoomManager {
   constructor(
     private io: Server,
     private hooks: RoomHooks,
-    private botDelayMs = Number(process.env.BOT_DELAY_MS ?? 1400),
+    /** Atraso fixo dos bots, sem esperar animações (testes). Sem ele, ritmo de mesa real. */
+    private botDelayMs?: number,
+    /** Tempo de decisão do humano (testes encurtam). */
+    private turnMs = HUMAN_TIMEOUT_MS,
   ) {}
 
   /** Salas públicas que ainda aceitam jogadores, para a lista do lobby. */
@@ -179,6 +212,8 @@ export class RoomManager {
       accounts: new Map(),
       invites: new Map(),
       wasActive: false,
+      idle: new Map(),
+      seen: {},
     };
   }
 
@@ -350,6 +385,9 @@ export class RoomManager {
         fresh.addPlayer(p.id, p.name, p.isBot, p.personality);
       }
       entry.engine = fresh;
+      entry.idle.clear();
+      entry.seen = {};
+      delete entry.clock;
       this.clearTimer(entry);
       this.broadcast(rid);
     });
@@ -490,6 +528,8 @@ export class RoomManager {
     if (this.socketToRoom.get(socketId) !== rid) return;
     const entry = this.rooms.get(rid);
     if (!entry || !entry.engine.isGameStarted()) return;
+    // Jogou por conta própria: zera os estouros de tempo.
+    entry.idle.delete(socketId);
     fn(entry.engine);
     this.afterMutation(rid);
   }
@@ -511,35 +551,91 @@ export class RoomManager {
     this.hooks.onPresence(ids);
   }
 
+  /**
+   * Quanto segurar a mesa para o app mostrar o que acabou de acontecer
+   * (cena do desafio, perda de influência, efeito da carta ou do bloqueio).
+   */
+  private holdFor(entry: RoomEntry): number {
+    const st = entry.engine.getState();
+    const seen = entry.seen;
+    const block = st.pendingBlock ? `${st.turnIndex}-${st.pendingBlock.blockerId}-${st.pendingBlock.role}` : undefined;
+    let freeze = 0;
+    if (st.lastReveal && st.lastReveal.stamp !== seen.reveal) freeze += HOLD_FREEZE_MS;
+    if (st.lastLoss && st.lastLoss.stamp !== seen.loss) freeze += HOLD_FREEZE_MS;
+    let effect = 0;
+    if (st.lastResolved && st.lastResolved.stamp !== seen.resolved) effect = HOLD_EFFECT_MS;
+    if (block && block !== seen.block) effect = Math.max(effect, HOLD_BLOCK_MS);
+    entry.seen = {
+      reveal: st.lastReveal?.stamp,
+      loss: st.lastLoss?.stamp,
+      resolved: st.lastResolved?.stamp,
+      block,
+    };
+    if (this.botDelayMs !== undefined) return 0;
+    return Math.max(freeze, effect);
+  }
+
   /** Transmite o estado e agenda a próxima jogada de bot (ou o relógio do humano). */
   private afterMutation(roomId: string) {
     const entry = this.rooms.get(roomId);
     if (!entry) return;
+    this.clearTimer(entry);
+    delete entry.clock;
+    const engine = entry.engine;
+    if (engine.isGameStarted() && engine.getState().phase === 'action') {
+      // Quem estourou o tempo vezes demais sai entre uma jogada e outra,
+      // para não cancelar a jogada de mais ninguém.
+      for (const [playerId, strikes] of entry.idle) {
+        if (strikes < IDLE_STRIKES) continue;
+        entry.idle.delete(playerId);
+        engine.forfeitPlayer(playerId, 'idle');
+      }
+    }
+    const hold = this.holdFor(entry);
+
+    const st = engine.getState();
+    const actorId = engine.isGameStarted() ? pendingActor(st) : undefined;
+    const actor = actorId ? st.players.find((p) => p.id === actorId) : undefined;
+    let delay = 0;
+    if (actor) {
+      if (actor.isBot) {
+        const think = this.botDelayMs ?? between(BOT_THINK_MS[st.phase] ?? [1_500, 3_000]);
+        // Escolher a ação já cobre a cena anterior; reagir só começa depois dela.
+        delay = st.phase === 'action' ? Math.max(hold, think) : hold + think;
+      } else {
+        delay = hold + this.turnMs;
+        const now = Date.now();
+        entry.clock = { playerId: actor.id, startAt: now + hold, endAt: now + delay };
+      }
+    }
+
     this.broadcast(roomId);
     this.presence(entry, false);
-    this.clearTimer(entry);
-    if (!entry.engine.isGameStarted()) return;
+    if (!actor || !actorId) return;
 
-    const st = entry.engine.getState();
-    const actorId = pendingActor(st);
-    if (!actorId) return;
-    const actor = st.players.find((p) => p.id === actorId);
-    if (!actor) return;
+    entry.timer = setTimeout(() => {
+      delete entry.timer;
+      if (this.rooms.get(roomId) !== entry) return;
+      // Garante que ninguém jogou nesse meio tempo.
+      if (pendingActor(entry.engine.getState()) !== actorId) return;
+      if (!actor.isBot) this.strike(entry, actor.id, actor.name);
+      try {
+        this.playFor(entry.engine, actorId);
+      } catch (err) {
+        console.error(`[room ${roomId}] erro ao jogar por ${actorId}:`, err);
+      }
+      this.afterMutation(roomId);
+    }, delay);
+  }
 
-    entry.timer = setTimeout(
-      () => {
-        delete entry.timer;
-        if (this.rooms.get(roomId) !== entry) return;
-        // Garante que ninguém jogou nesse meio tempo.
-        if (pendingActor(entry.engine.getState()) !== actorId) return;
-        try {
-          this.playFor(entry.engine, actorId);
-        } catch (err) {
-          console.error(`[room ${roomId}] erro ao jogar por ${actorId}:`, err);
-        }
-        this.afterMutation(roomId);
-      },
-      actor.isBot ? this.botDelayMs : HUMAN_TIMEOUT_MS,
+  /** O humano deixou o tempo acabar: conta um aviso e avisa a mesa. */
+  private strike(entry: RoomEntry, playerId: string, name: string) {
+    const strikes = (entry.idle.get(playerId) ?? 0) + 1;
+    entry.idle.set(playerId, strikes);
+    entry.engine.note(
+      strikes >= IDLE_STRIKES
+        ? `⏰ ${name} deixou o tempo acabar ${strikes} vezes seguidas e sai da partida.`
+        : `⏰ Tempo esgotado para ${name} (${strikes}/${IDLE_STRIKES}).`,
     );
   }
 
@@ -604,6 +700,16 @@ export class RoomManager {
         isPrivate: entry.isPrivate,
         matchmade: entry.matchmade,
       },
+      // Relativo ao envio, para não depender do relógio do aparelho.
+      ...(entry.clock
+        ? {
+            turnClock: {
+              playerId: entry.clock.playerId,
+              startInMs: Math.max(0, entry.clock.startAt - Date.now()),
+              endInMs: Math.max(0, entry.clock.endAt - Date.now()),
+            },
+          }
+        : {}),
     };
   }
 

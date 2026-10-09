@@ -46,9 +46,18 @@ When a challenge resolves or a match burns, `FreezeFrame` (`stage.dart`) plays i
 
 1. A one-frame warm strike flash.
 2. The greyscale portrait.
-3. The verdict in script ("Provado.", "Blefe." or "Um palito a menos.") with a caps credit.
+3. The verdict in script ("Provado.", "Blefe.", "Um palito a menos." or, for the last influence, "Apagou.") with a caps credit.
+4. On a loss, a `BurningMatch` (`tv.dart`) strikes, burns down to char and goes out with a wisp of smoke.
 
-This is the single authored motion on the table. Reduced motion skips the push-in.
+Each scene lasts `Pacing.freeze` (3.4 s). A challenge and the loss it causes play one after the other, never on top of each other. This is the single authored motion on the table. Reduced motion skips the push-in.
+
+## Pacing
+
+`lib/game/pacing.dart` holds the table's tempo, and the server (`RoomManager.ts`) uses the same numbers. After each play the table waits for its scene to finish: 3.4 s per freeze and up to 2.6 s for a card effect. Bots think 5–10 s before choosing an action and 1.5–3 s before reacting, since reactions are asked one player at a time. Every decision has a 30 s clock. Three timeouts in a row eliminate the player; this happens between plays, so nobody else's play gets cancelled.
+
+## Sound
+
+`lib/ui/sounds.dart` plays the effects in `assets/sounds/`, which `tool/make_sounds.py` synthesises (no third-party samples). Each card animation has its own sound. There is a gavel plus "proven" or "bluff" for a challenge, the match burning for a loss, two wood knocks on your turn, ticks in the last 5 seconds, and a sting for a win or a loss. Sound can be toggled in the game's ⋮ menu and the choice is saved on the device. Audio failures never break the game.
 
 ## Rules kept
 

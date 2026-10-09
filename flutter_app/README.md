@@ -119,6 +119,12 @@ os antigos `accounts.json` e `reports.json` na pasta tem tudo importado na
 primeira subida; os arquivos viram `*.imported`. Para backup, copie
 `intriga.db` com o servidor parado (ou use `sqlite3 intriga.db ".backup copia.db"`).
 
+Cada decisão tem 30 s. Quem deixa o tempo acabar 3 vezes seguidas é
+eliminado (entre uma jogada e outra) e continua assistindo. Os bots pensam
+de 5 a 10 s para escolher a ação e de 1,5 a 3 s para reagir, e a mesa espera
+cada cena do app terminar antes de seguir. `BOT_DELAY_MS` troca isso por um
+atraso fixo, sem esperas (testes).
+
 Ajustes por variável de ambiente: `QUEUE_BOT_FILL_MS` (20000),
 `QUEUE_GATHER_MS` (8000), `QUEUE_MIN_PLAYERS` (4), `QUEUE_BOT_FILL_TARGET` (4),
 `REPORT_LIMIT` (5), `REPORT_WINDOW_MS` (600000), `REGISTER_LIMIT` (20 contas

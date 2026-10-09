@@ -8,6 +8,7 @@ import '../../campaign/campaign.dart';
 import '../../campaign/campaign_store.dart';
 import '../../engine/models.dart';
 import '../../game/local_game_controller.dart';
+import '../sounds.dart';
 import '../theme.dart';
 import '../widgets/tv.dart';
 import 'game_screen.dart';
@@ -498,7 +499,8 @@ class _NextCourtState extends State<_NextCourt>
   }
 
   void _spin(int step) {
-    if (!mounted) return;
+    if (!mounted || _landed) return;
+    _timer?.cancel();
     if (step >= _steps) {
       setState(() {
         _shown = _final;
@@ -506,10 +508,12 @@ class _NextCourtState extends State<_NextCourt>
       });
       _freeze.forward(from: 0);
       HapticFeedback.heavyImpact();
+      Sounds.instance.play(Sfx.challenge);
       return;
     }
     setState(() => _shown = _frame(step));
     HapticFeedback.selectionClick();
+    Sounds.instance.play(Sfx.tick, volume: 0.5);
     // Cada corte demora mais que a anterior, até parar.
     _timer = Timer(
       Duration(milliseconds: 50 + step * step * 3),
@@ -553,18 +557,28 @@ class _NextCourtState extends State<_NextCourt>
           style: TvType.credit(12),
         ),
         const SizedBox(height: 12),
-        for (final (i, c) in _shown.indexed)
-          _CurseLine(
-            curse: c,
-            drawn: curseInfo[run.curses[i]]!,
-            landed: _landed,
-            freeze: _freeze,
+        // Tocar no sorteio para de girar na hora.
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _landed ? null : () => _spin(_steps),
+          child: Column(
+            children: [
+              for (final (i, c) in _shown.indexed)
+                _CurseLine(
+                  curse: c,
+                  drawn: curseInfo[run.curses[i]]!,
+                  landed: _landed,
+                  freeze: _freeze,
+                ),
+            ],
           ),
+        ),
         const SizedBox(height: 16),
+        // Só dá para entrar depois de ver a punição.
         CueButton(
-          label: 'Enfrentar a corte',
+          label: _landed ? 'Enfrentar a corte' : 'Sorteando...',
           icon: Icons.gavel,
-          onPressed: widget.onPlay,
+          onPressed: _landed ? widget.onPlay : null,
         ),
         const SizedBox(height: 32),
         _CourtStrip(run: run),

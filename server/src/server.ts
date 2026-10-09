@@ -23,6 +23,8 @@ export type ServerOptions = {
   /** Pasta do banco `intriga.db`. */
   dataDir?: string;
   botDelayMs?: number;
+  /** Tempo de decisão de cada humano (padrão 30 s). */
+  turnMs?: number;
   queue?: Partial<MatchmakerOptions>;
   reports?: Partial<ReportLimits>;
   /** Contas novas por IP por hora. */
@@ -138,7 +140,8 @@ export async function startServer(opts: ServerOptions = {}) {
         roomsDirty.unref?.();
       },
     },
-    opts.botDelayMs ?? num(env.BOT_DELAY_MS, 1400),
+    opts.botDelayMs ?? (env.BOT_DELAY_MS ? num(env.BOT_DELAY_MS, 0) : undefined),
+    opts.turnMs,
   );
   matchmaker = new Matchmaker(io, queueOpts, (members, bots) => rooms.createMatch(members, bots), presence);
   friends = new FriendService(io, accounts, identities, (sid) =>

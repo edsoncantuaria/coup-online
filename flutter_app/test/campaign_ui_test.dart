@@ -27,7 +27,12 @@ void main() {
       await tester.scrollUntilVisible(find.text('NOVA CAMPANHA'), 200);
       await tester.tap(find.text('NOVA CAMPANHA'));
       await tester.pump();
-      expect(find.text('SORTEANDO...'), findsOneWidget);
+      // A punição e o botão mostram o sorteio; entrar ainda não dá.
+      expect(find.text('SORTEANDO...'), findsNWidgets(2));
+      await tester.ensureVisible(find.text('SORTEANDO...').last);
+      await tester.tap(find.text('SORTEANDO...').last, warnIfMissed: false);
+      await tester.pump();
+      expect(find.byType(GameScreen), findsNothing);
       // Deixa a roleta parar.
       for (var i = 0; i < 30; i++) {
         await tester.pump(const Duration(milliseconds: 200));

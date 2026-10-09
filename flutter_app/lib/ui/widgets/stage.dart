@@ -8,6 +8,8 @@ import '../../engine/labels.dart';
 import '../../engine/models.dart';
 import '../../game/game_controller.dart';
 import '../../game/online_game_controller.dart';
+import '../../game/pacing.dart';
+import '../sounds.dart';
 import '../theme.dart';
 import 'common.dart';
 import 'tv.dart';
@@ -382,7 +384,8 @@ class ClaimTraces {
 
 /// O momento da novela: quando um desafio se resolve ou alguém perde uma
 /// influência, a imagem congela em preto e branco e o veredito entra como
-/// cartão de título.
+/// cartão de título. Desafio e perda que chegam juntos passam um depois do
+/// outro; cada cena dura o que a mesa espera ([Pacing.freeze]).
 class FreezeFrame extends StatefulWidget {
   const FreezeFrame({super.key, required this.state, required this.myId});
   final GameState state;
@@ -394,14 +397,16 @@ class FreezeFrame extends StatefulWidget {
 
 class _FreezeFrameState extends State<FreezeFrame>
     with SingleTickerProviderStateMixin {
+  /// Tempo na tela: a cena inteira menos o respiro da saída.
+  static final _shown = Pacing.freeze - const Duration(milliseconds: 250);
+
   int? _seenReveal;
   int? _seenLoss;
+  final List<_Freeze> _queue = [];
   _Freeze? _current;
   Timer? _timer;
-  late final _push = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1800),
-  );
+  final List<Timer> _cues = [];
+  late final _push = AnimationController(vsync: this, duration: _shown);
 
   @override
   void initState() {
@@ -416,49 +421,90 @@ class _FreezeFrameState extends State<FreezeFrame>
     super.didUpdateWidget(oldWidget);
     final s = widget.state;
     String n(String id, String name) => id == widget.myId ? 'Você' : name;
-    _Freeze? next;
     final r = s.lastReveal;
     final l = s.lastLoss;
     if (r != null && r.stamp != _seenReveal) {
       _seenReveal = r.stamp;
-      _seenLoss = l?.stamp; // o palco mostra a perda em seguida
-      next = _Freeze(
-        role: r.role,
-        cue: 'DESAFIO',
-        title: r.proven ? 'Provado.' : 'Blefe.',
-        credit: r.proven
-            ? '${n(r.playerId, r.playerName)} tinha ${roleArticle(r.role)}'
-            : '${n(r.playerId, r.playerName)} não tinha ${roleArticle(r.role)}',
-        color: r.proven ? Tv.proven : Tv.carmineText,
+      _queue.add(
+        _Freeze(
+          role: r.role,
+          playerId: r.playerId,
+          cue: 'DESAFIO',
+          title: r.proven ? 'Provado.' : 'Blefe.',
+          credit: r.proven
+              ? '${n(r.playerId, r.playerName)} tinha ${roleArticle(r.role)}'
+              : '${n(r.playerId, r.playerName)} não tinha ${roleArticle(r.role)}',
+          color: r.proven ? Tv.proven : Tv.carmineText,
+          verdict: r.proven ? Sfx.proven : Sfx.bluff,
+        ),
       );
-    } else if (l != null && l.stamp != _seenLoss) {
+    }
+    if (l != null && l.stamp != _seenLoss) {
       _seenLoss = l.stamp;
-      next = _Freeze(
-        role: l.role,
-        cue: 'REVELAÇÃO',
-        title: 'Um palito a menos.',
-        credit: '${n(l.playerId, l.playerName)} perdeu ${roleArticle(l.role)}',
-        color: Tv.carmineText,
+      final out = !(s.playerById(l.playerId)?.isAlive ?? true);
+      final who = n(l.playerId, l.playerName);
+      _queue.add(
+        _Freeze(
+          role: l.role,
+          playerId: l.playerId,
+          cue: out ? 'FORA DA CORTE' : 'REVELAÇÃO',
+          title: out ? 'Apagou.' : 'Um palito a menos.',
+          credit: out
+              ? '$who perdeu ${roleArticle(l.role)} e está fora'
+              : '$who perdeu ${roleArticle(l.role)}',
+          color: Tv.carmineText,
+          burns: true,
+        ),
       );
     }
-    if (next != null) {
-      if (r?.playerId == widget.myId || l?.playerId == widget.myId) {
-        HapticFeedback.heavyImpact();
-      } else {
-        HapticFeedback.lightImpact();
-      }
-      _timer?.cancel();
-      _current = next;
-      if (!MediaQuery.of(context).disableAnimations) _push.forward(from: 0);
-      _timer = Timer(const Duration(milliseconds: 1700), () {
-        if (mounted) setState(() => _current = null);
-      });
+    if (_current == null) _next();
+  }
+
+  void _next() {
+    for (final t in _cues) {
+      t.cancel();
     }
+    _cues.clear();
+    if (_queue.isEmpty) {
+      if (_current != null) setState(() => _current = null);
+      return;
+    }
+    final f = _queue.removeAt(0);
+    setState(() => _current = f);
+    if (f.playerId == widget.myId) {
+      HapticFeedback.heavyImpact();
+    } else {
+      HapticFeedback.lightImpact();
+    }
+    final sounds = Sounds.instance;
+    if (f.burns) {
+      sounds.play(Sfx.burnOut);
+    } else {
+      // O martelo do desafio e, logo depois, o veredito.
+      sounds.play(Sfx.challenge);
+      _cues.add(
+        Timer(const Duration(milliseconds: 380), () {
+          if (mounted) sounds.play(f.verdict!);
+        }),
+      );
+    }
+    if (!MediaQuery.of(context).disableAnimations) {
+      _push.forward(from: 0);
+    } else {
+      _push.value = 1;
+    }
+    _timer?.cancel();
+    _timer = Timer(_shown, () {
+      if (mounted) _next();
+    });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    for (final t in _cues) {
+      t.cancel();
+    }
     _push.dispose();
     super.dispose();
   }
@@ -502,12 +548,12 @@ class _FreezeFrameState extends State<FreezeFrame>
                     animation: _push,
                     builder: (_, _) {
                       final t = _push.value;
-                      if (!_push.isAnimating || t > 0.08) {
+                      if (!_push.isAnimating || t > 0.05) {
                         return const SizedBox.shrink();
                       }
                       return ColoredBox(
                         color: const Color(0xFFFFE9B8)
-                            .withValues(alpha: 0.8 * (1 - t / 0.08)),
+                            .withValues(alpha: 0.8 * (1 - t / 0.05)),
                       );
                     },
                   ),
@@ -522,35 +568,50 @@ class _FreezeFrameState extends State<FreezeFrame>
                           20,
                           wide ? 72 : 48,
                         ),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  f.title,
-                                  maxLines: 1,
-                                  style: TvType.title(
-                                    wide ? 96 : 64,
-                                    color: f.color,
-                                  ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (f.burns) ...[
+                              // O palito risca, queima até o fim e apaga.
+                              AnimatedBuilder(
+                                animation: _push,
+                                builder: (_, _) => BurningMatch(
+                                  progress: _push.value,
+                                  height: wide ? 180 : 120,
                                 ),
                               ),
-                              const SizedBox(height: 6),
-                              Text(
-                                f.credit.toUpperCase(),
-                                style: TvType.credit(
-                                  14,
-                                  color: Tv.credit,
-                                  weight: FontWeight.w700,
-                                ),
-                              ),
+                              SizedBox(width: wide ? 28 : 16),
                             ],
-                          ),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      f.title,
+                                      maxLines: 1,
+                                      style: TvType.title(
+                                        wide ? 96 : 64,
+                                        color: f.color,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    f.credit.toUpperCase(),
+                                    style: TvType.credit(
+                                      14,
+                                      color: Tv.credit,
+                                      weight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       const LetterboxBar(height: 24),
@@ -566,16 +627,26 @@ class _FreezeFrameState extends State<FreezeFrame>
 class _Freeze {
   _Freeze({
     required this.role,
+    required this.playerId,
     required this.cue,
     required this.title,
     required this.credit,
     required this.color,
+    this.verdict,
+    this.burns = false,
   });
   final Role role;
+  final String playerId;
   final String cue;
   final String title;
   final String credit;
   final Color color;
+
+  /// Som do veredito do desafio.
+  final Sfx? verdict;
+
+  /// Perda de influência: o palito queima na cena.
+  final bool burns;
 }
 
 // ------------------------------------------------------------ final credits

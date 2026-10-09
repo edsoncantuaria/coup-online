@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../engine/models.dart';
+import '../sounds.dart';
 import '../theme.dart';
 
 /// Posição de cada jogador na mesa, para as animações saírem de quem age e
@@ -36,18 +37,34 @@ enum EffectKind {
   blockAmbassador,
 }
 
+/// Duração de cada animação. Cabem no tempo que a mesa segura depois de
+/// uma ação ou bloqueio (`Pacing.effect` e `Pacing.block`).
 const _durations = {
-  EffectKind.income: 900,
-  EffectKind.foreignAid: 1200,
-  EffectKind.tax: 1600,
-  EffectKind.steal: 1600,
-  EffectKind.assassinate: 1500,
-  EffectKind.exchange: 1700,
-  EffectKind.coup: 1600,
-  EffectKind.blockContessa: 1600,
-  EffectKind.blockDuke: 1400,
-  EffectKind.blockCaptain: 1400,
-  EffectKind.blockAmbassador: 1400,
+  EffectKind.income: 1300,
+  EffectKind.foreignAid: 1800,
+  EffectKind.tax: 2500,
+  EffectKind.steal: 2500,
+  EffectKind.assassinate: 2300,
+  EffectKind.exchange: 2500,
+  EffectKind.coup: 2500,
+  EffectKind.blockContessa: 2300,
+  EffectKind.blockDuke: 2200,
+  EffectKind.blockCaptain: 2200,
+  EffectKind.blockAmbassador: 2200,
+};
+
+const _sounds = {
+  EffectKind.income: Sfx.income,
+  EffectKind.foreignAid: Sfx.foreignAid,
+  EffectKind.tax: Sfx.tax,
+  EffectKind.steal: Sfx.steal,
+  EffectKind.assassinate: Sfx.assassinate,
+  EffectKind.exchange: Sfx.exchange,
+  EffectKind.coup: Sfx.coup,
+  EffectKind.blockContessa: Sfx.blockContessa,
+  EffectKind.blockDuke: Sfx.blockDuke,
+  EffectKind.blockCaptain: Sfx.blockCaptain,
+  EffectKind.blockAmbassador: Sfx.blockAmbassador,
 };
 
 class _Effect {
@@ -155,7 +172,11 @@ class _CardEffectsLayerState extends State<CardEffectsLayer>
       if (!blocked && kind != null) next = _Effect(kind, r.actorId, r.targetId);
     }
 
-    if (next != null && !MediaQuery.of(context).disableAnimations) {
+    if (next == null) return;
+    if (MediaQuery.of(context).disableAnimations) {
+      // Sem animação, o som ainda conta o que aconteceu.
+      Sounds.instance.play(_sounds[next.kind]!);
+    } else {
       _play(next);
     }
   }
@@ -172,6 +193,7 @@ class _CardEffectsLayerState extends State<CardEffectsLayer>
           HapticFeedback.mediumImpact();
       }
     }
+    Sounds.instance.play(_sounds[e.kind]!);
     setState(() => _effect = e);
     _ctrl
       ..duration = Duration(milliseconds: _durations[e.kind]!)
