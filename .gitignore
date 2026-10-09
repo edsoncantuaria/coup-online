@@ -109,3 +109,7 @@ ngrok
 
 # Dados do servidor (contas, denúncias)
 server/data/
+
+# Deploy: build do Flutter web e segredos do servidor
+deploy/web/
+deploy/.env

@@ -1,0 +1,37 @@
+# Produção do Intriga. As portas só escutam em 127.0.0.1: o acesso público
+# entra pelo Cloudflare Tunnel (cloudflared no host), que repassa
+#   api-intriga.cloudive.com.br -> http://localhost:9101
+#   intriga.cloudive.com.br     -> http://localhost:9102
+# Passo a passo em deploy/README.md.
+name: intriga
+
+services:
+  api:
+    build: ../server
+    image: intriga-server:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9101:3000"
+    environment:
+      PUBLIC_URL: https://api-intriga.cloudive.com.br
+      # O IP real do jogador vem do cloudflared (limites de cadastro e denúncia).
+      TRUST_PROXY: "1"
+    # SMTP_HOST, SMTP_USER, SMTP_PASS, MAIL_FROM etc. (opcional, nunca no git).
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - intriga-data:/data
+
+  web:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9102:80"
+    volumes:
+      # Build do Flutter web (flutter build web), copiado para cá no deploy.
+      - ./web:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  intriga-data:

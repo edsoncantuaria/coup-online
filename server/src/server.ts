@@ -14,11 +14,13 @@ import { Matchmaker, type MatchmakerOptions } from './lobby/Matchmaker.js';
 import { RoomManager, MAX_PLAYERS } from './socket/RoomManager.js';
 import { FriendService } from './social/FriendService.js';
 import { ReportService, type ReportLimits } from './social/ReportService.js';
+import { openDatabase } from './store/Database.js';
+import { importLegacyJson } from './store/legacyJson.js';
 import { RateLimiter } from './store/RateLimiter.js';
 
 export type ServerOptions = {
   port?: number;
-  /** Onde ficam `accounts.json` e `reports.json`. */
+  /** Pasta do banco `intriga.db`. */
   dataDir?: string;
   botDelayMs?: number;
   queue?: Partial<MatchmakerOptions>;
@@ -87,9 +89,11 @@ export async function startServer(opts: ServerOptions = {}) {
     maxHttpBufferSize: 100_000,
   });
 
-  const accounts = new AccountService(dataDir);
+  const db = openDatabase(dataDir);
+  importLegacyJson(db, dataDir);
+  const accounts = new AccountService(db);
   const identities = new IdentityRegistry();
-  const reports = new ReportService(dataDir, reportLimits);
+  const reports = new ReportService(db, reportLimits);
   const registerLimiter = new RateLimiter(opts.registerPerHour ?? num(env.REGISTER_LIMIT, 20), 60 * 60 * 1000);
   const loginFailLimiter = new RateLimiter(10, 10 * 60 * 1000);
   const loginIpLimiter = new RateLimiter(60, 10 * 60 * 1000);
@@ -504,23 +508,18 @@ export async function startServer(opts: ServerOptions = {}) {
   if (!linkBase) linkBase = `http://localhost:${port}`;
   if (mailer.kind === 'log') console.log('[mail] sem SMTP_HOST: os emails da conta vão só para este log.');
 
-  const flush = () => {
-    accounts.flush();
-    reports.flush();
-  };
-
   return {
     port,
     dataDir,
     io,
+    db,
     accounts,
     reports,
-    flush,
     async close() {
       matchmaker.close();
       if (roomsDirty) clearTimeout(roomsDirty);
       await new Promise<void>((resolve) => io.close(() => resolve()));
-      flush();
+      if (db.isOpen) db.close();
     },
   };
 }

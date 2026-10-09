@@ -42,6 +42,19 @@ after(async () => {
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
+/** Bytes do banco em disco (arquivo principal e WAL), para ver o que foi gravado em claro. */
+function rawDb() {
+  return ['intriga.db', 'intriga.db-wal']
+    .map((f) => {
+      try {
+        return fs.readFileSync(path.join(dataDir, f)).toString('latin1');
+      } catch {
+        return '';
+      }
+    })
+    .join('');
+}
+
 /** Cliente socket.io que guarda o último estado de sala recebido. */
 async function client(auth) {
   const s = connectClient(base, { transports: ['websocket'], forceNew: true, ...(auth ? { auth } : {}) });
@@ -144,12 +157,12 @@ test('cria conta, entra, sessão por token e nada sensível vaza', async () => {
   assert.equal((await ack(after, 'account_auth', { token: viaSocket.token })).code, 'UNAUTHORIZED');
 
   // Em disco: hash scrypt, nunca a senha nem o token em claro.
-  server.flush();
-  const raw = fs.readFileSync(path.join(dataDir, 'accounts.json'), 'utf8');
+  const raw = rawDb();
+  assert.ok(raw.length > 0);
   assert.ok(!raw.includes(PW));
   assert.ok(!raw.includes(good.body.token));
-  const doc = JSON.parse(raw);
-  assert.match(doc.users.find((u) => u.username === 'Alice').passwordHash, /^scrypt:16384:8:1:[0-9a-f]{32}:[0-9a-f]{128}$/);
+  const alice = server.db.prepare('SELECT password_hash FROM users WHERE username = ?').get('Alice');
+  assert.match(alice.password_hash, /^scrypt:16384:8:1:[0-9a-f]{32}:[0-9a-f]{128}$/);
 });
 
 test('fila junta quatro jogadores numa partida pública', async () => {
@@ -312,13 +325,13 @@ test('denúncias: guarda, conta por jogador, bloqueia repetição e excesso', as
   const fromGuest = await ack(others[1], 'report_player', { playerId: c, reason: 'anti_game' });
   assert.equal(fromGuest.ok, true);
 
-  server.flush();
-  const doc = JSON.parse(fs.readFileSync(path.join(dataDir, 'reports.json'), 'utf8'));
-  const mine = doc.reports.filter((r) => r.roomId === roomId);
-  assert.equal(mine.filter((r) => r.reporter.userId === juca.user.id).length, 2);
+  const mine = server.db
+    .prepare('SELECT reporter_user_id, note FROM reports WHERE room_id = ? ORDER BY at, rowid')
+    .all(roomId);
+  assert.equal(mine.filter((r) => r.reporter_user_id === juca.user.id).length, 2);
   assert.equal(mine[0].note, 'gritou no chat');
-  assert.equal(doc.counts['guest:rival 0'].total, 2);
-  assert.equal(doc.counts['guest:rival 0'].voice_abuse, 1);
+  assert.equal(server.reports.countFor('guest:rival 0').total, 2);
+  assert.equal(server.reports.countFor('guest:rival 0').voice_abuse, 1);
 });
 
 test('confirma o email e troca a senha pelos links do email', async () => {
@@ -364,9 +377,8 @@ test('confirma o email e troca a senha pelos links do email', async () => {
   assert.equal((await ack(s, 'account_forgot_password', { email: 'clara@exemplo.com' })).ok, true);
 
   // O email de um jogador nunca aparece para os outros.
-  server.flush();
-  const doc = JSON.parse(fs.readFileSync(path.join(dataDir, 'accounts.json'), 'utf8'));
-  const clara = doc.users.find((u) => u.username === 'Clara');
-  assert.ok(!JSON.stringify(doc).includes(rt) && !JSON.stringify(doc).includes(vt), 'tokens só como hash');
-  assert.equal(clara.emailKey, 'clara@exemplo.com');
+  const raw = rawDb();
+  assert.ok(!raw.includes(rt) && !raw.includes(vt), 'tokens só como hash');
+  const clara = server.db.prepare('SELECT email_key FROM users WHERE username = ?').get('Clara');
+  assert.equal(clara.email_key, 'clara@exemplo.com');
 });

@@ -78,7 +78,7 @@ export class FriendService {
     }
     me.outgoing.push(target.id);
     target.incoming.push(me.id);
-    this.accounts.save();
+    this.accounts.saveFriends(me, target);
     this.push(me.id);
     this.push(target.id);
     for (const sid of this.identities.socketsOf(target.id)) {
@@ -96,7 +96,7 @@ export class FriendService {
     if (accept && other) {
       this.makeFriends(me, other);
     } else {
-      this.accounts.save();
+      this.accounts.saveFriends(me, ...(other ? [other] : []));
       this.push(me.id);
       if (other) this.push(other.id);
     }
@@ -114,7 +114,7 @@ export class FriendService {
       other.incoming = other.incoming.filter((id) => id !== me.id);
       other.outgoing = other.outgoing.filter((id) => id !== me.id);
     }
-    this.accounts.save();
+    this.accounts.saveFriends(me, ...(other ? [other] : []));
     this.push(me.id);
     if (other) this.push(other.id);
   }
@@ -145,7 +145,7 @@ export class FriendService {
     b.outgoing = b.outgoing.filter((id) => id !== a.id);
     if (!a.friends.includes(b.id)) a.friends.push(b.id);
     if (!b.friends.includes(a.id)) b.friends.push(a.id);
-    this.accounts.save();
+    this.accounts.saveFriends(a, b);
     this.push(a.id);
     this.push(b.id);
   }

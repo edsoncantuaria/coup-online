@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
-import path from 'node:path';
 import { AppError, cleanText } from '../errors.js';
-import { JsonFile } from '../store/JsonFile.js';
+import type { DatabaseSync } from '../store/Database.js';
 import { RateLimiter } from '../store/RateLimiter.js';
 
 export const REPORT_REASONS = ['voice_abuse', 'anti_game'] as const;
@@ -24,31 +23,22 @@ export type ReportRecord = {
   target: Party & { key: string };
 };
 
-type ReportCount = { name: string; total: number; voice_abuse: number; anti_game: number; lastAt: number };
-
-type ReportsDoc = {
-  version: 1;
-  reports: ReportRecord[];
-  /** Total de denúncias por jogador denunciado (`userId` ou `guest:<nome>`). */
-  counts: Record<string, ReportCount>;
-};
+/** Total de denúncias de um jogador denunciado (`userId` ou `guest:<nome>`). */
+export type ReportCount = { name: string; total: number; voice_abuse: number; anti_game: number; lastAt: number };
 
 export type ReportLimits = { limit: number; windowMs: number };
 
 /**
- * Denúncias de jogadores (abuso no chat de voz, antijogo). Gravadas em
- * `<dataDir>/reports.json`; não há painel de moderação por enquanto.
+ * Denúncias de jogadores (abuso no chat de voz, antijogo). Gravadas na
+ * tabela `reports` do SQLite; não há painel de moderação por enquanto.
  */
 export class ReportService {
-  private store: JsonFile<ReportsDoc>;
   private limiter: RateLimiter;
 
-  constructor(dataDir: string, limits: ReportLimits) {
-    this.store = new JsonFile<ReportsDoc>(path.join(dataDir, 'reports.json'), () => ({
-      version: 1,
-      reports: [],
-      counts: {},
-    }));
+  constructor(
+    private db: DatabaseSync,
+    limits: ReportLimits,
+  ) {
     this.limiter = new RateLimiter(limits.limit, limits.windowMs);
   }
 
@@ -77,9 +67,9 @@ export class ReportService {
     }
     const note = typeof input.note === 'string' ? cleanText(input.note, 280) : '';
     const targetKey = ReportService.keyOf(input.target);
-    const dup = this.store.data.reports.some(
-      (r) => r.reporter.key === input.reporterKey && r.target.key === targetKey && r.roomId === input.roomId,
-    );
+    const dup = this.db
+      .prepare('SELECT 1 FROM reports WHERE reporter_key = ? AND target_key = ? AND room_id = ?')
+      .get(input.reporterKey, targetKey, input.roomId);
     if (dup) throw new AppError('DUPLICATE', 'Você já denunciou esse jogador nesta partida.');
     if (!this.limiter.hit(input.reporterKey)) {
       throw new AppError('RATE_LIMITED', 'Muitas denúncias em pouco tempo. Tente mais tarde.');
@@ -93,27 +83,40 @@ export class ReportService {
       reporter: { ...input.reporter, key: input.reporterKey },
       target: { ...input.target, key: targetKey },
     };
-    this.store.data.reports.push(rec);
-    const c = (this.store.data.counts[targetKey] ??= {
-      name: input.target.name,
-      total: 0,
-      voice_abuse: 0,
-      anti_game: 0,
-      lastAt: 0,
-    });
-    c.name = input.target.name;
-    c.total += 1;
-    c[reason] += 1;
-    c.lastAt = rec.at;
-    this.store.save();
+    this.db
+      .prepare(
+        `INSERT INTO reports (id, at, reason, note, room_id, reporter_key, reporter_user_id,
+           reporter_name, target_key, target_user_id, target_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        rec.id,
+        rec.at,
+        rec.reason,
+        rec.note ?? null,
+        rec.roomId,
+        rec.reporter.key,
+        rec.reporter.userId ?? null,
+        rec.reporter.name,
+        rec.target.key,
+        rec.target.userId ?? null,
+        rec.target.name,
+      );
     return rec;
   }
 
   countFor(key: string): ReportCount | undefined {
-    return this.store.data.counts[key];
-  }
-
-  flush() {
-    this.store.flush();
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total,
+                SUM(reason = 'voice_abuse') AS voice_abuse,
+                SUM(reason = 'anti_game') AS anti_game,
+                MAX(at) AS lastAt,
+                (SELECT target_name FROM reports WHERE target_key = ?1 ORDER BY at DESC, rowid DESC LIMIT 1)
+                  AS name
+           FROM reports WHERE target_key = ?1`,
+      )
+      .get(key) as ReportCount | undefined;
+    return row && row.total > 0 ? { ...row } : undefined;
   }
 }

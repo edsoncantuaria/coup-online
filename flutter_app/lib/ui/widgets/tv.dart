@@ -13,7 +13,7 @@ import '../theme.dart';
 Alignment faceOf(Role r) => switch (r) {
   Role.duke => const Alignment(0.0, -0.62),
   Role.assassin => const Alignment(0.0, -0.55),
-  Role.captain => const Alignment(-0.5, -0.66),
+  Role.captain => const Alignment(0.0, -0.6),
   Role.ambassador => const Alignment(0.0, -0.62),
   Role.contessa => const Alignment(0.04, -0.66),
 };
@@ -72,8 +72,7 @@ class CloseUp extends StatelessWidget {
           final w = c.maxWidth;
           final h = c.maxHeight;
           // A arte é quadrada; só a faixa entre 12% e 72% da altura entra
-          // em cena (em cima há placas com o nome em algumas artes e embaixo
-          // a faixa de pergaminho com o nome impresso).
+          // em cena, para o close ficar no rosto e não no corpo.
           final art = max(h / (_visible - _topCut), w) * zoom;
           final left = (w - art) * (face.x + 1) / 2;
           final top = ((h - art) * (face.y + 1) / 2)

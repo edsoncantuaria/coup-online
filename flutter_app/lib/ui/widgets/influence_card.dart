@@ -6,6 +6,7 @@ import '../../engine/labels.dart';
 import '../../engine/models.dart';
 import '../theme.dart';
 import 'common.dart';
+import 'tv.dart';
 
 /// Carta de influência. Mostra arte do personagem, verso (oculta) ou a
 /// carta virada (perdida, em tons de cinza com caveira).
@@ -58,20 +59,41 @@ class InfluenceCard extends StatelessWidget {
               ),
             ),
           ),
-          // A arte já traz o nome do personagem; o rótulo só aparece no fallback.
           Image.asset(
             roleArt(role!),
             fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+            errorBuilder: (_, _, _) => Center(
+              child: Icon(style.icon, color: style.accent, size: width * 0.4),
+            ),
+          ),
+          // A arte não traz texto: o nome vai impresso no pé da carta, com a
+          // lixa por cima, como o rodapé de uma caixinha.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(style.icon, color: style.accent, size: width * 0.4),
-                Text(
-                  roleLabel(role!).toUpperCase(),
-                  style: TextStyle(
-                    color: style.accent,
-                    fontWeight: FontWeight.w900,
-                    fontSize: width * 0.12,
+                StrikerStrip(height: math.max(2, width * 0.035)),
+                ColoredBox(
+                  color: Tv.ink,
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: width * 0.035),
+                    child: Center(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          roleLabel(role!).toUpperCase(),
+                          maxLines: 1,
+                          style: TvType.credit(
+                            width * 0.1,
+                            color: Tv.credit,
+                            weight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ],

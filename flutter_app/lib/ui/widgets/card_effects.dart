@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../engine/models.dart';
+import '../theme.dart';
 
 /// Posição de cada jogador na mesa, para as animações saírem de quem age e
 /// chegarem em quem sofre a ação.
@@ -241,9 +242,25 @@ class _CardEffectsLayerState extends State<CardEffectsLayer>
 
 // ------------------------------------------------------------------ painter
 
+// Os efeitos falam a mesma língua das artes das cartas: capa de caixa de
+// fósforos impressa. Formas chapadas com contorno de tinta preta, uma
+// sombra de registro deslocada e retícula de pontos no lugar de brilho.
+
 const _gold = Color(0xFFF2C14E);
 const _goldDeep = Color(0xFFB8862B);
 const _blood = Color(0xFFE53935);
+const _oxblood = Color(0xFF7A1F1F);
+const _violet = Color(0xFFB39AD9);
+const _steel = Color(0xFF8FB8D8);
+const _parchment = Color(0xFFF2D68A);
+const _ochre = Color(0xFF8C6F3D);
+const _wax = Color(0xFF8C3B3B);
+const _lilac = Color(0xFFDCD4E6);
+const _rose = Color(0xFFE38FB3);
+const _fire = Color(0xFFFF7A1A);
+
+/// Deslocamento da sombra de registro.
+const _misreg = Offset(2, 2.5);
 
 /// Desenha um quadro de cada efeito. [t] vai de 0 a 1.
 class EffectPainter extends CustomPainter {
@@ -273,7 +290,7 @@ class EffectPainter extends CustomPainter {
       case EffectKind.assassinate:
         _assassinate(canvas, size);
       case EffectKind.exchange:
-        _exchange(canvas);
+        _exchange(canvas, size);
       case EffectKind.coup:
         _coup(canvas, size);
       case EffectKind.blockContessa:
@@ -301,6 +318,86 @@ class EffectPainter extends CustomPainter {
     return a * (q * q) + mid * (2 * q * p) + b * (p * p);
   }
 
+  Paint _fill(Color color, double alpha) =>
+      Paint()..color = color.withValues(alpha: alpha.clamp(0.0, 1.0));
+
+  Paint _line(Color color, double width, double alpha) => Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = width
+    ..strokeCap = StrokeCap.round
+    ..strokeJoin = StrokeJoin.round
+    ..color = color.withValues(alpha: alpha.clamp(0.0, 1.0));
+
+  /// Forma impressa: sombra de registro, cor chapada e contorno de tinta.
+  void _print(
+    Canvas c,
+    Path path,
+    Color color,
+    double alpha, {
+    double outline = 2.5,
+  }) {
+    if (alpha <= 0) return;
+    c.drawPath(path.shift(_misreg), _fill(Tv.ink, 0.85 * alpha));
+    c.drawPath(path, _fill(color, alpha));
+    c.drawPath(path, _line(Tv.ink, outline, alpha));
+  }
+
+  /// Traço impresso: sombra, contorno de tinta e a cor por cima.
+  void _printStroke(
+    Canvas c,
+    Path path,
+    Color color,
+    double width,
+    double alpha,
+  ) {
+    if (alpha <= 0) return;
+    c.drawPath(path.shift(_misreg), _line(Tv.ink, width + 3, 0.85 * alpha));
+    c.drawPath(path, _line(Tv.ink, width + 3, alpha));
+    c.drawPath(path, _line(color, width, alpha));
+  }
+
+  /// Retícula: pontos que encolhem do centro para fora, no lugar do brilho.
+  void _dots(Canvas c, Offset at, double radius, Color color, double alpha) {
+    if (alpha <= 0 || radius < 2) return;
+    final step = math.max(6.0, radius / 14);
+    final paint = _fill(color, alpha);
+    final n = (radius / step).ceil();
+    for (var j = -n; j <= n; j++) {
+      for (var i = -n; i <= n; i++) {
+        final o = Offset(i * step + (j.isOdd ? step / 2 : 0), j * step * 0.87);
+        final d = o.distance / radius;
+        if (d >= 1) continue;
+        c.drawCircle(at + o, step * 0.5 * (1 - d), paint);
+      }
+    }
+  }
+
+  /// Anel com contorno de tinta.
+  void _ring(
+    Canvas c,
+    Offset at,
+    double radius,
+    Color color,
+    double width,
+    double alpha,
+  ) {
+    if (alpha <= 0) return;
+    c.drawCircle(at, radius, _line(Tv.ink, width + 3, alpha));
+    c.drawCircle(at, radius, _line(color, width, alpha));
+  }
+
+  /// Escurece a mesa com tinta chapada.
+  void _shade(Canvas c, Size s, double alpha) {
+    if (alpha <= 0) return;
+    c.drawRect(Offset.zero & s, _fill(Tv.ink, alpha));
+  }
+
+  /// Anel que se abre quando algo chega em [at]; invisível fora de 0 < p < 1.
+  void _landing(Canvas c, Offset at, double p, Color color) {
+    if (p <= 0 || p >= 1) return;
+    _ring(c, at, 16 + 34 * Curves.easeOut.transform(p), color, 3, 1 - p);
+  }
+
   void _coin(
     Canvas c,
     Offset at,
@@ -314,110 +411,160 @@ class EffectPainter extends CustomPainter {
     c.save();
     c.translate(at.dx, at.dy);
     c.scale(sx, 1);
-    c.drawCircle(
-      Offset.zero,
-      r,
-      Paint()..color = _goldDeep.withValues(alpha: alpha),
-    );
-    c.drawCircle(
-      Offset.zero,
-      r * 0.8,
-      Paint()..color = _gold.withValues(alpha: alpha),
-    );
-    c.drawCircle(
-      Offset.zero,
-      r * 0.55,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = r * 0.12
-        ..color = _goldDeep.withValues(alpha: alpha),
-    );
+    c.drawCircle(_misreg, r, _fill(Tv.ink, 0.85 * alpha));
+    c.drawCircle(Offset.zero, r, _fill(_goldDeep, alpha));
+    c.drawCircle(Offset.zero, r * 0.8, _fill(_gold, alpha));
+    c.drawCircle(Offset.zero, r * 0.55, _line(_goldDeep, r * 0.12, alpha));
+    c.drawCircle(Offset.zero, r, _line(Tv.ink, 2, alpha));
     c.restore();
   }
 
-  void _icon(
+  /// Estrela de quatro pontas (as da arte da Condessa).
+  Path _star(Offset at, double r) {
+    final p = Path();
+    for (var i = 0; i < 8; i++) {
+      final a = i * math.pi / 4 - math.pi / 2;
+      final rr = i.isEven ? r : r * 0.32;
+      final v = at + Offset(math.cos(a), math.sin(a)) * rr;
+      i == 0 ? p.moveTo(v.dx, v.dy) : p.lineTo(v.dx, v.dy);
+    }
+    return p..close();
+  }
+
+  /// Losango (o motivo da faixa do Embaixador).
+  Path _diamond(Offset at, double w, double h) => Path()
+    ..moveTo(at.dx, at.dy - h / 2)
+    ..lineTo(at.dx + w / 2, at.dy)
+    ..lineTo(at.dx, at.dy + h / 2)
+    ..lineTo(at.dx - w / 2, at.dy)
+    ..close();
+
+  // ------------------------------------------------------------- motifs
+
+  /// Bolsa de moedas do Duque.
+  void _purse(Canvas c, Offset at, double s, double alpha) {
+    if (alpha <= 0 || s < 1) return;
+    c.save();
+    c.translate(at.dx, at.dy);
+    final body = Path()
+      ..moveTo(-0.12 * s, -0.22 * s)
+      ..cubicTo(-0.46 * s, -0.04 * s, -0.42 * s, 0.38 * s, 0, 0.38 * s)
+      ..cubicTo(0.42 * s, 0.38 * s, 0.46 * s, -0.04 * s, 0.12 * s, -0.22 * s)
+      ..close();
+    final ruffle = Path()
+      ..moveTo(-0.12 * s, -0.22 * s)
+      ..lineTo(-0.24 * s, -0.4 * s)
+      ..lineTo(-0.07 * s, -0.33 * s)
+      ..lineTo(0, -0.44 * s)
+      ..lineTo(0.07 * s, -0.33 * s)
+      ..lineTo(0.24 * s, -0.4 * s)
+      ..lineTo(0.12 * s, -0.22 * s)
+      ..close();
+    _print(c, ruffle, _goldDeep, alpha);
+    _print(c, body, _gold, alpha);
+    final tie = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(0, -0.22 * s),
+            width: 0.34 * s,
+            height: 0.08 * s,
+          ),
+          Radius.circular(0.03 * s),
+        ),
+      );
+    _print(c, tie, _oxblood, alpha, outline: 1.5);
+    // Hachura de sombra no lado da bolsa.
+    final hatch = _line(_goldDeep, 1.5, alpha);
+    for (var i = 0; i < 4; i++) {
+      final y = (0.02 + i * 0.08) * s;
+      c.drawLine(Offset(0.16 * s, y), Offset(0.3 * s, y - 0.06 * s), hatch);
+    }
+    c.restore();
+  }
+
+  /// Âncora do Capitão, apontando para baixo quando [rotation] é 0.
+  void _anchor(
     Canvas c,
-    IconData icon,
     Offset at,
-    double size,
-    Color color, {
+    double s,
+    Color color,
+    double alpha, {
     double rotation = 0,
-    double alpha = 1,
-    bool glow = true,
   }) {
     if (alpha <= 0) return;
-    final tp = TextPainter(
-      text: TextSpan(
-        text: String.fromCharCode(icon.codePoint),
-        style: TextStyle(
-          fontFamily: icon.fontFamily,
-          package: icon.fontPackage,
-          fontSize: size,
-          color: color.withValues(alpha: alpha),
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
     c.save();
     c.translate(at.dx, at.dy);
     c.rotate(rotation);
-    tp.paint(c, Offset(-tp.width / 2, -tp.height / 2));
+    final w = math.max(2.5, s * 0.1);
+    final path = Path()
+      ..addOval(Rect.fromCircle(center: Offset(0, -0.4 * s), radius: 0.09 * s))
+      ..moveTo(0, -0.31 * s)
+      ..lineTo(0, 0.42 * s)
+      ..moveTo(-0.2 * s, -0.2 * s)
+      ..lineTo(0.2 * s, -0.2 * s)
+      ..moveTo(-0.36 * s, 0.1 * s)
+      ..quadraticBezierTo(-0.3 * s, 0.42 * s, 0, 0.42 * s)
+      ..quadraticBezierTo(0.3 * s, 0.42 * s, 0.36 * s, 0.1 * s);
+    _printStroke(c, path, color, w, alpha);
+    // Unhas nas pontas dos braços.
+    for (final side in [-1.0, 1.0]) {
+      final fluke = Path()
+        ..moveTo(side * 0.36 * s, 0.0)
+        ..lineTo(side * 0.46 * s, 0.16 * s)
+        ..lineTo(side * 0.26 * s, 0.14 * s)
+        ..close();
+      _print(c, fluke, color, alpha, outline: 2);
+    }
     c.restore();
   }
 
-  void _ring(
-    Canvas c,
-    Offset at,
-    double radius,
-    Color color,
-    double width,
-    double alpha,
-  ) {
-    if (alpha <= 0) return;
-    c.drawCircle(
-      at,
-      radius,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = width
-        ..color = color.withValues(alpha: alpha),
+  /// Carta lacrada do Embaixador.
+  void _letter(Canvas c, Offset at, double s, double alpha) {
+    if (alpha <= 0 || s < 1) return;
+    final rect = Rect.fromCenter(center: at, width: s, height: s * 0.66);
+    _print(c, Path()..addRect(rect), Tv.credit, alpha);
+    final flap = Path()
+      ..moveTo(rect.left, rect.top)
+      ..lineTo(at.dx, at.dy + s * 0.05)
+      ..lineTo(rect.right, rect.top);
+    c.drawPath(flap, _line(Tv.ink, 2, alpha));
+    _print(
+      c,
+      Path()..addOval(
+        Rect.fromCircle(center: at + Offset(0, s * 0.05), radius: s * 0.13),
+      ),
+      _wax,
+      alpha,
+      outline: 1.5,
     );
   }
 
-  void _glow(Canvas c, Offset at, double radius, Color color, double alpha) {
-    if (alpha <= 0) return;
-    // Clarão seco: um disco chapado, sem halo.
-    c.drawCircle(
-      at,
-      radius * 0.6,
-      Paint()..color = color.withValues(alpha: 0.35 * alpha),
+  /// Lua crescente da Condessa.
+  void _moon(Canvas c, Offset at, double s, double alpha) {
+    if (alpha <= 0 || s < 1) return;
+    final moon = Path.combine(
+      PathOperation.difference,
+      Path()..addOval(Rect.fromCircle(center: at, radius: s * 0.45)),
+      Path()..addOval(
+        Rect.fromCircle(
+          center: at + Offset(s * 0.2, -s * 0.1),
+          radius: s * 0.38,
+        ),
+      ),
     );
-  }
-
-  void _vignette(Canvas c, Size s, Color color, double alpha) {
-    if (alpha <= 0) return;
-    final rect = Offset.zero & s;
-    c.drawRect(
-      rect,
-      Paint()
-        ..shader = RadialGradient(
-          radius: 0.9,
-          colors: [
-            Colors.transparent,
-            color.withValues(alpha: alpha),
-          ],
-        ).createShader(rect),
-    );
-  }
-
-  /// Anel que se abre quando algo chega em [at]; invisível fora de 0 < p < 1.
-  void _landing(Canvas c, Offset at, double p, Color color) {
-    if (p <= 0 || p >= 1) return;
-    _ring(c, at, 16 + 34 * Curves.easeOut.transform(p), color, 3, 1 - p);
+    _print(c, moon, _lilac, alpha);
   }
 
   /// Adaga desenhada apontando para [angle] (radianos).
-  void _dagger(Canvas c, Offset at, double angle, double len, Color color) {
+  void _dagger(
+    Canvas c,
+    Offset at,
+    double angle,
+    double len,
+    Color color, {
+    double alpha = 1,
+  }) {
     c.save();
     c.translate(at.dx, at.dy);
     c.rotate(angle);
@@ -426,27 +573,38 @@ class EffectPainter extends CustomPainter {
       ..lineTo(-len * 0.05, -len * 0.09)
       ..lineTo(-len * 0.05, len * 0.09)
       ..close();
-    c.drawPath(blade, Paint()..color = const Color(0xFFF3E9DF));
-    // Guarda e cabo.
-    c.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset(-len * 0.07, 0),
-          width: len * 0.06,
-          height: len * 0.32,
+    final guard = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(-len * 0.07, 0),
+            width: len * 0.07,
+            height: len * 0.34,
+          ),
+          const Radius.circular(2),
         ),
-        const Radius.circular(2),
-      ),
-      Paint()..color = color,
+      );
+    final grip = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(-len * 0.42, -len * 0.05, len * 0.33, len * 0.1),
+          const Radius.circular(3),
+        ),
+      );
+    final pommel = Path()
+      ..addOval(
+        Rect.fromCircle(center: Offset(-len * 0.45, 0), radius: len * 0.07),
+      );
+    _print(c, grip, const Color(0xFF3B2A4F), alpha, outline: 2);
+    _print(c, blade, const Color(0xFFF3E9DF), alpha, outline: 2);
+    // O fio da lâmina na cor do personagem.
+    c.drawLine(
+      Offset(len * 0.45, 0),
+      Offset(-len * 0.02, 0),
+      _line(color, 1.5, alpha),
     );
-    c.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(-len * 0.42, -len * 0.05, len * 0.33, len * 0.1),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF3B2A4F),
-    );
-    c.drawCircle(Offset(-len * 0.45, 0), len * 0.06, Paint()..color = color);
+    _print(c, guard, color, alpha, outline: 2);
+    _print(c, pommel, color, alpha, outline: 2);
     c.restore();
   }
 
@@ -483,39 +641,52 @@ class EffectPainter extends CustomPainter {
     _landing(c, from, _seg(0.7, 1), _gold);
   }
 
-  /// Duque (Taxa): o brasão do Duque brilha no centro e três moedas
-  /// jorram dele para o tesouro de quem cobrou.
+  /// Duque (Taxa): o medalhão do Duque (raios dourados sobre vinho, como
+  /// na carta) surge perto de quem cobrou, a caminho do centro, e três
+  /// moedas jorram da bolsa para o tesouro dele. Fica fora do meio da
+  /// tela para não tampar o rosto do close.
   void _tax(Canvas c, Size s) {
-    final center = Offset(s.width / 2, s.height * 0.42);
+    final toward = Offset.lerp(
+      from,
+      Offset(s.width / 2, s.height * 0.42),
+      0.4,
+    )!;
+    final center = Offset(
+      toward.dx,
+      toward.dy.clamp(80.0, math.max(80.0, s.height - 80)),
+    );
     final appear = Curves.easeOutBack.transform(_seg(0, 0.25));
     final crestAlpha = _fadeOut(0.7);
-    _glow(c, center, 140 * appear, const Color(0xFF7A1F1F), 0.55 * crestAlpha);
-    _glow(c, center, 70 * appear, _gold, 0.35 * crestAlpha);
-    // Raios de luz girando atrás do brasão.
-    final rays = Paint()..color = _gold.withValues(alpha: 0.18 * crestAlpha);
-    for (var i = 0; i < 10; i++) {
-      final a = i * math.pi / 5 + t * 1.2;
-      final path = Path()
-        ..moveTo(center.dx, center.dy)
-        ..lineTo(
-          center.dx + math.cos(a - 0.08) * 120 * appear,
-          center.dy + math.sin(a - 0.08) * 120 * appear,
-        )
-        ..lineTo(
-          center.dx + math.cos(a + 0.08) * 120 * appear,
-          center.dy + math.sin(a + 0.08) * 120 * appear,
-        )
-        ..close();
-      c.drawPath(path, rays);
+    final r = 72 * appear;
+    _dots(c, center, 140 * appear, _oxblood, 0.7 * crestAlpha);
+    if (r > 1) {
+      final disc = Path()..addOval(Rect.fromCircle(center: center, radius: r));
+      _print(c, disc, _oxblood, crestAlpha, outline: 3);
+      // Raios girando dentro do medalhão.
+      c.save();
+      c.clipPath(disc);
+      final rays = _fill(_gold, 0.9 * crestAlpha);
+      for (var i = 0; i < 12; i++) {
+        final a = i * math.pi / 6 + t * 1.2;
+        c.drawPath(
+          Path()
+            ..moveTo(center.dx, center.dy)
+            ..lineTo(
+              center.dx + math.cos(a - 0.09) * r,
+              center.dy + math.sin(a - 0.09) * r,
+            )
+            ..lineTo(
+              center.dx + math.cos(a + 0.09) * r,
+              center.dy + math.sin(a + 0.09) * r,
+            )
+            ..close(),
+          rays,
+        );
+      }
+      c.restore();
+      _ring(c, center, r * 0.42, _gold, 2, crestAlpha);
     }
-    _icon(
-      c,
-      Icons.account_balance,
-      center,
-      58 * appear,
-      _gold,
-      alpha: crestAlpha,
-    );
+    _purse(c, center, 62 * appear, crestAlpha);
     for (var i = 0; i < 3; i++) {
       final p = Curves.easeInCubic.transform(
         _seg(0.28 + i * 0.1, 0.75 + i * 0.1),
@@ -531,40 +702,45 @@ class EffectPainter extends CustomPainter {
     _landing(c, from, _seg(0.75, 1), _gold);
   }
 
-  /// Capitão (Extorsão): a âncora é lançada até o alvo, prende e puxa duas
-  /// moedas de volta para o Capitão.
+  /// Capitão (Extorsão): a âncora é lançada até o alvo, presa por uma
+  /// corrente de elos, e puxa duas moedas de volta para o Capitão.
   void _steal(Canvas c) {
     final target = to ?? from - const Offset(0, 160);
-    const blue = Color(0xFF8FB8D8);
     final out = Curves.easeOutCubic.transform(_seg(0, 0.35));
     final back = Curves.easeInOutCubic.transform(_seg(0.45, 0.95));
     final anchorPos = back > 0
         ? _arc(target, from, back, lift: -40)
         : _arc(from, target, out, lift: 60);
-    // Corrente entre o Capitão e a âncora.
-    final chain = Paint()
-      ..color = blue.withValues(alpha: 0.6 * _fadeOut(0.85))
-      ..strokeWidth = 2;
-    const links = 14;
-    for (var i = 0; i < links; i++) {
-      if (i.isOdd) continue;
-      final a = Offset.lerp(from, anchorPos, i / links)!;
-      final b = Offset.lerp(from, anchorPos, (i + 1) / links)!;
-      c.drawLine(a, b, chain);
+    // Corrente: elos alternando de frente e de lado.
+    final chainAlpha = _fadeOut(0.85);
+    final dir = anchorPos - from;
+    final dist = dir.distance;
+    if (dist > 8) {
+      final angle = math.atan2(dir.dy, dir.dx);
+      final links = (dist / 11).floor();
+      for (var i = 0; i < links; i++) {
+        final pos = Offset.lerp(from, anchorPos, (i + 0.5) / links)!;
+        c.save();
+        c.translate(pos.dx, pos.dy);
+        c.rotate(angle);
+        final link = Rect.fromCenter(
+          center: Offset.zero,
+          width: 13,
+          height: i.isEven ? 8 : 3,
+        );
+        c.drawOval(link, _line(Tv.ink, 4.5, chainAlpha));
+        c.drawOval(link, _line(_steel, 2, chainAlpha));
+        c.restore();
+      }
     }
     final swing = math.sin(t * 18) * 0.3 * (1 - _seg(0.35, 0.45));
-    _icon(
-      c,
-      Icons.anchor,
-      anchorPos,
-      34,
-      blue,
-      rotation: swing,
-      alpha: _fadeOut(0.9),
-    );
+    _anchor(c, anchorPos, 38, _steel, _fadeOut(0.9), rotation: swing);
     // Impacto no alvo.
     final hit = _seg(0.33, 0.55);
-    _ring(c, target, 14 + 34 * hit, blue, 3, hit > 0 ? 1 - hit : 0);
+    if (hit > 0 && hit < 1) {
+      _dots(c, target, 30 + 30 * hit, _steel, 0.6 * (1 - hit));
+    }
+    _ring(c, target, 14 + 34 * hit, _steel, 3, hit > 0 ? 1 - hit : 0);
     // Moedas arrancadas do alvo.
     for (var i = 0; i < 2; i++) {
       final p = Curves.easeInOutCubic.transform(_seg(0.47 + i * 0.06, 0.95));
@@ -580,36 +756,43 @@ class EffectPainter extends CustomPainter {
     _landing(c, from, _seg(0.92, 1), _gold);
   }
 
-  /// Assassino: a tela escurece, a adaga cruza a mesa até a vítima e deixa
-  /// dois cortes em X com um clarão de sangue.
+  /// Assassino: a mesa escurece, a adaga cruza até a vítima e deixa dois
+  /// cortes em X violeta (os da carta). O vermelho só aparece no golpe.
   void _assassinate(Canvas c, Size s) {
     final target = to ?? from - const Offset(0, 160);
-    const purple = Color(0xFFB39AD9);
-    _vignette(c, s, Colors.black, 0.75 * _pulse);
+    _shade(c, s, 0.6 * _pulse);
     final fly = Curves.easeInExpo.transform(_seg(0.08, 0.33));
     final dir = target - from;
     final angle = math.atan2(dir.dy, dir.dx);
     if (fly < 1) {
-      // Rastro.
+      // Rastro em retícula.
       for (var i = 1; i <= 6; i++) {
         final p = (fly - i * 0.04).clamp(0.0, 1.0);
-        _glow(c, Offset.lerp(from, target, p)!, 10, purple, 0.35 * (1 - i / 7));
+        _dots(c, Offset.lerp(from, target, p)!, 12, _violet, 0.7 * (1 - i / 7));
       }
-      _dagger(c, Offset.lerp(from, target, fly)!, angle, 56, purple);
+      _dagger(c, Offset.lerp(from, target, fly)!, angle, 56, _violet);
     }
     final hit = _seg(0.33, 1);
     if (hit > 0) {
-      _glow(
+      // O golpe: um estouro vermelho curto que vira retícula violeta.
+      final strike = _seg(0.33, 0.5);
+      if (strike < 1) {
+        _dots(
+          c,
+          target,
+          50 + 50 * Curves.easeOut.transform(strike),
+          _blood,
+          0.9 * (1 - strike),
+        );
+      }
+      _dots(
         c,
         target,
         90 * Curves.easeOut.transform(hit),
-        _blood,
-        0.6 * (1 - hit),
+        _violet,
+        0.45 * (1 - hit),
       );
-      final slash = Paint()
-        ..color = _blood.withValues(alpha: (1 - _seg(0.6, 1)))
-        ..strokeWidth = 5
-        ..strokeCap = StrokeCap.round;
+      final alpha = 1 - _seg(0.6, 1);
       final draw1 = _seg(0.33, 0.45);
       final draw2 = _seg(0.42, 0.54);
       const len = 46.0;
@@ -617,23 +800,32 @@ class EffectPainter extends CustomPainter {
       final b1 = target + const Offset(len, len);
       final a2 = target + const Offset(len, -len);
       final b2 = target + const Offset(-len, len);
-      if (draw1 > 0) c.drawLine(a1, Offset.lerp(a1, b1, draw1)!, slash);
-      if (draw2 > 0) c.drawLine(a2, Offset.lerp(a2, b2, draw2)!, slash);
+      final core = _line(_blood, 2, 1 - strike);
+      for (final (a, b, d) in [(a1, b1, draw1), (a2, b2, draw2)]) {
+        if (d <= 0) continue;
+        final cut = Path()
+          ..moveTo(a.dx, a.dy)
+          ..lineTo(Offset.lerp(a, b, d)!.dx, Offset.lerp(a, b, d)!.dy);
+        _printStroke(c, cut, _violet, 6, alpha);
+        if (strike < 1) c.drawPath(cut, core);
+      }
     }
   }
 
   /// Embaixador: quatro cartas saem de quem trocou, giram em leque como num
-  /// embaralhar e voltam para a mão.
-  void _exchange(Canvas c) {
-    const gold = Color(0xFFF2D68A);
+  /// embaralhar e voltam para a mão, em volta da carta lacrada. O leque
+  /// abre para o lado de dentro da tela (para baixo nos assentos do topo).
+  void _exchange(Canvas c, Size s) {
+    final side = from.dy < s.height / 2 ? 1.0 : -1.0;
     final open = Curves.easeOutBack.transform(_seg(0, 0.3));
     final close = Curves.easeInBack.transform(_seg(0.72, 1));
-    final radius = 70 * open * (1 - close);
-    final center = from - Offset(0, 70 * open * (1 - close));
-    _glow(c, center, 110 * open * (1 - close), gold, 0.3);
+    final k = (open * (1 - close)).clamp(0.0, 1.5);
+    final radius = 70 * k;
+    final center = from + Offset(0, 70 * k * side);
+    _dots(c, center, 110 * k, _parchment, 0.45);
     for (var i = 0; i < 4; i++) {
       // As cartas trocam de lugar girando em volta do centro.
-      final base = -math.pi / 2 + (i - 1.5) * 0.55;
+      final base = side * math.pi / 2 + (i - 1.5) * 0.55;
       final orbit = _seg(0.3, 0.72) * math.pi * 2 * (i.isEven ? 1 : -1) * 0.5;
       final a = base + orbit;
       final pos = center + Offset(math.cos(a), math.sin(a)) * radius;
@@ -642,63 +834,52 @@ class EffectPainter extends CustomPainter {
       c.rotate(a + math.pi / 2);
       final rect = RRect.fromRectAndRadius(
         Rect.fromCenter(center: Offset.zero, width: 30, height: 44),
-        const Radius.circular(4),
+        const Radius.circular(3),
       );
-      c.drawRRect(
-        rect,
-        Paint()
-          ..shader = const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF8C6F3D), Color(0xFF4A3A1E)],
-          ).createShader(rect.outerRect),
-      );
-      c.drawRRect(
-        rect,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5
-          ..color = gold,
-      );
+      _print(c, Path()..addRRect(rect), _ochre, 1);
+      c.drawRRect(rect.deflate(4), _line(_parchment, 1.2, 1));
+      c.drawPath(_diamond(Offset.zero, 12, 18), _fill(_parchment, 1));
       c.restore();
     }
-    _icon(c, Icons.swap_horiz, center, 30 * open * (1 - close), gold);
+    _letter(c, center, 40 * k, 1);
   }
 
   /// Golpe: uma bola de fogo cai sobre o alvo; ondas de choque e a mesa
   /// treme.
   void _coup(Canvas c, Size s) {
     final target = to ?? from - const Offset(0, 160);
-    const fire = Color(0xFFFF7A1A);
     final fly = Curves.easeInQuad.transform(_seg(0, 0.32));
     if (fly < 1) {
       final pos = _arc(from, target, fly, lift: 160);
       for (var i = 1; i <= 8; i++) {
         final p = (fly - i * 0.03).clamp(0.0, 1.0);
-        _glow(
+        _dots(
           c,
           _arc(from, target, p, lift: 160),
-          14 - i.toDouble(),
-          fire,
-          0.5 * (1 - i / 9),
+          18 - i.toDouble(),
+          _fire,
+          0.8 * (1 - i / 9),
         );
       }
-      _glow(c, pos, 34, fire, 0.9);
-      _glow(c, pos, 14, Colors.white, 0.9);
+      _print(
+        c,
+        Path()..addOval(Rect.fromCircle(center: pos, radius: 18)),
+        _fire,
+        1,
+        outline: 3,
+      );
+      c.drawCircle(pos - const Offset(3, 3), 8, _fill(Tv.credit, 1));
     }
     final hit = _seg(0.32, 1);
     if (hit > 0) {
-      // Clarão na mesa toda.
-      c.drawRect(
-        Offset.zero & s,
-        Paint()..color = fire.withValues(alpha: 0.35 * (1 - _seg(0.32, 0.5))),
-      );
-      _glow(
+      // Clarão chapado na mesa toda.
+      c.drawRect(Offset.zero & s, _fill(_fire, 0.3 * (1 - _seg(0.32, 0.5))));
+      _dots(
         c,
         target,
-        120 * Curves.easeOut.transform(hit),
-        fire,
-        0.7 * (1 - hit),
+        130 * Curves.easeOut.transform(hit),
+        _fire,
+        0.85 * (1 - hit),
       );
       for (var i = 0; i < 3; i++) {
         final w = _seg(0.32 + i * 0.08, 0.9 + i * 0.03);
@@ -706,63 +887,42 @@ class EffectPainter extends CustomPainter {
           c,
           target,
           20 + 140 * Curves.easeOut.transform(w),
-          i == 0 ? Colors.white : fire,
+          i == 0 ? Tv.credit : _fire,
           5 - i.toDouble(),
           w > 0 ? (1 - w) : 0,
         );
       }
       // Faíscas.
       final rnd = math.Random(7);
-      final spark = Paint()..strokeCap = StrokeCap.round;
+      final p = Curves.easeOut.transform(_seg(0.32, 0.85));
       for (var i = 0; i < 16; i++) {
         final a = rnd.nextDouble() * math.pi * 2;
         final speed = 60 + rnd.nextDouble() * 90;
-        final p = Curves.easeOut.transform(_seg(0.32, 0.85));
-        final p0 = target + Offset(math.cos(a), math.sin(a)) * speed * p;
-        final p1 =
-            target +
-            Offset(math.cos(a), math.sin(a)) * speed * math.max(0, p - 0.12);
-        spark
-          ..color = (i.isEven ? fire : _gold).withValues(alpha: 1 - p)
-          ..strokeWidth = 3;
-        c.drawLine(p1, p0, spark);
+        final u = Offset(math.cos(a), math.sin(a));
+        final p0 = target + u * speed * p;
+        final p1 = target + u * speed * math.max(0, p - 0.12);
+        c.drawLine(p1, p0, _line(Tv.ink, 6, 1 - p));
+        c.drawLine(p1, p0, _line(i.isEven ? _fire : _gold, 3, 1 - p));
       }
     }
   }
 
-  /// Condessa: uma redoma de luz lilás se ergue em volta dela e a adaga
-  /// do Assassino se parte ao bater no escudo.
+  /// Condessa: a lua dela se ergue com uma redoma lilás e estrelas rosa
+  /// girando, e a adaga do Assassino se parte ao bater no escudo.
   void _blockContessa(Canvas c) {
-    const lilac = Color(0xFFDCD4E6);
-    const rose = Color(0xFFE38FB3);
     final rise = Curves.easeOutBack.transform(_seg(0, 0.3));
     final alpha = _fadeOut(0.75);
     final r = 56 * rise;
-    _glow(c, from, r * 1.6, rose, 0.35 * alpha);
-    final dome = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          lilac.withValues(alpha: 0),
-          lilac.withValues(alpha: 0.35 * alpha),
-        ],
-        stops: const [0.6, 1],
-      ).createShader(Rect.fromCircle(center: from, radius: r + 1));
-    c.drawCircle(from, r, dome);
-    _ring(c, from, r, lilac, 2.5, 0.9 * alpha);
-    // Pétalas girando.
-    for (var i = 0; i < 8; i++) {
-      final a = i * math.pi / 4 + t * 4;
-      final pos = from + Offset(math.cos(a), math.sin(a)) * (r + 10);
-      c.save();
-      c.translate(pos.dx, pos.dy);
-      c.rotate(a);
-      c.drawOval(
-        Rect.fromCenter(center: Offset.zero, width: 12, height: 6),
-        Paint()..color = rose.withValues(alpha: 0.8 * alpha),
-      );
-      c.restore();
+    _dots(c, from, r * 1.6, _rose, 0.5 * alpha);
+    c.drawCircle(from, math.max(0, r), _fill(_lilac, 0.16 * alpha));
+    _ring(c, from, r, _lilac, 2.5, 0.9 * alpha);
+    // Estrelas girando.
+    for (var i = 0; i < 6; i++) {
+      final a = i * math.pi / 3 + t * 4;
+      final pos = from + Offset(math.cos(a), math.sin(a)) * (r + 12);
+      _print(c, _star(pos, 8 * rise), _rose, alpha, outline: 1.5);
     }
-    _icon(c, Icons.shield_moon, from, 30 * rise, lilac, alpha: alpha);
+    _moon(c, from, 40 * rise, alpha);
     // A adaga vem de quem tentou assassinar e quebra no escudo.
     final attacker = to;
     if (attacker != null) {
@@ -773,63 +933,56 @@ class EffectPainter extends CustomPainter {
         final fly = Curves.easeInCubic.transform(_seg(0.15, 0.42));
         final angle = math.atan2(dir.dy, dir.dx);
         if (fly < 1 && fly > 0) {
-          _dagger(
-            c,
-            Offset.lerp(attacker, stop, fly)!,
-            angle,
-            44,
-            const Color(0xFFB39AD9),
-          );
+          _dagger(c, Offset.lerp(attacker, stop, fly)!, angle, 44, _violet);
         }
         final shatter = _seg(0.42, 0.8);
         if (shatter > 0 && shatter < 1) {
-          final p = Paint()
-            ..color = const Color(0xFFB39AD9).withValues(alpha: 1 - shatter);
           for (var i = 0; i < 7; i++) {
             final a = angle + math.pi + (i - 3) * 0.35;
             final pos = stop + Offset(math.cos(a), math.sin(a)) * 50 * shatter;
             c.save();
             c.translate(pos.dx, pos.dy);
             c.rotate(a + shatter * 6);
-            c.drawPath(
+            _print(
+              c,
               Path()
-                ..moveTo(0, -4)
-                ..lineTo(5, 3)
-                ..lineTo(-4, 3)
+                ..moveTo(0, -5)
+                ..lineTo(6, 4)
+                ..lineTo(-5, 4)
                 ..close(),
-              p,
+              _violet,
+              1 - shatter,
+              outline: 1.5,
             );
             c.restore();
           }
-          _ring(c, stop, 6 + 20 * shatter, Colors.white, 2, 1 - shatter);
+          _ring(c, stop, 6 + 20 * shatter, Tv.credit, 2, 1 - shatter);
         }
       }
     }
   }
 
-  /// Duque bloqueando Ajuda Externa: uma barreira dourada com o brasão
-  /// repele as moedas.
+  /// Duque bloqueando Ajuda Externa: uma barreira vinho de borda dourada
+  /// com a bolsa no meio repele as moedas.
   void _blockDuke(Canvas c) {
     final rise = Curves.easeOutBack.transform(_seg(0, 0.3));
     final alpha = _fadeOut(0.7);
-    _glow(c, from, 100 * rise, const Color(0xFF7A1F1F), 0.5 * alpha);
-    // Hexágono.
-    final path = Path();
-    for (var i = 0; i < 6; i++) {
-      final a = i * math.pi / 3 - math.pi / 2;
-      final p = from + Offset(math.cos(a), math.sin(a)) * 54 * rise;
-      i == 0 ? path.moveTo(p.dx, p.dy) : path.lineTo(p.dx, p.dy);
+    _dots(c, from, 100 * rise, _oxblood, 0.6 * alpha);
+    Path hex(double radius) {
+      final path = Path();
+      for (var i = 0; i < 6; i++) {
+        final a = i * math.pi / 3 - math.pi / 2;
+        final p = from + Offset(math.cos(a), math.sin(a)) * radius;
+        i == 0 ? path.moveTo(p.dx, p.dy) : path.lineTo(p.dx, p.dy);
+      }
+      return path..close();
     }
-    path.close();
-    c.drawPath(path, Paint()..color = _gold.withValues(alpha: 0.12 * alpha));
-    c.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
-        ..color = _gold.withValues(alpha: alpha),
-    );
-    _icon(c, Icons.account_balance, from, 30 * rise, _gold, alpha: alpha);
+
+    if (rise > 0.02) {
+      _print(c, hex(54 * rise), _oxblood, 0.9 * alpha, outline: 3);
+      c.drawPath(hex(46 * rise), _line(_gold, 2.5, alpha));
+    }
+    _purse(c, from, 34 * rise, alpha);
     // Moedas que batem e voltam.
     for (var i = 0; i < 2; i++) {
       final p = _seg(0.2 + i * 0.1, 0.9);
@@ -848,38 +1001,59 @@ class EffectPainter extends CustomPainter {
     }
   }
 
-  /// Capitão bloqueando: a âncora crava no chão diante dele e uma onda
-  /// azul empurra o ladrão.
+  /// Capitão bloqueando: a âncora crava no chão diante dele e ondas azuis
+  /// empurram o ladrão.
   void _blockCaptain(Canvas c) {
-    const blue = Color(0xFF8FB8D8);
     final drop = Curves.bounceOut.transform(_seg(0, 0.4));
     final alpha = _fadeOut(0.7);
     final pos = from - Offset(0, 90 * (1 - drop));
-    _icon(c, Icons.anchor, pos, 46, blue, alpha: alpha);
     final splash = _seg(0.3, 0.8);
+    if (splash > 0 && splash < 1) {
+      _dots(c, from, 30 + 50 * splash, _steel, 0.5 * (1 - splash) * alpha);
+    }
     for (var i = 0; i < 2; i++) {
       final w = (splash - i * 0.15).clamp(0.0, 1.0);
-      _ring(c, from, 20 + 60 * w, blue, 3, w > 0 ? (1 - w) * alpha : 0);
+      _ring(c, from, 20 + 60 * w, _steel, 3, w > 0 ? (1 - w) * alpha : 0);
     }
+    _anchor(c, pos, 50, _steel, alpha);
   }
 
-  /// Embaixador bloqueando: um selo diplomático desce carimbando o veto.
+  /// Embaixador bloqueando: o lacre diplomático desce carimbando o veto.
   void _blockAmbassador(Canvas c) {
-    const gold = Color(0xFFF2D68A);
     final stamp = Curves.easeInCubic.transform(_seg(0, 0.3));
     final alpha = _fadeOut(0.7);
     final scale = 2.6 - 1.6 * stamp;
     final r = 30 * scale;
-    c.drawCircle(
-      from,
-      r,
-      Paint()..color = const Color(0xFF8C3B3B).withValues(alpha: 0.85 * alpha),
+    // Lacre de cera: borda ondulada, como cera esmagada.
+    final wax = Path();
+    for (var i = 0; i <= 24; i++) {
+      final a = i * math.pi * 2 / 24;
+      final rr = r * (i.isEven ? 1.0 : 0.92);
+      final v = from + Offset(math.cos(a), math.sin(a)) * rr;
+      i == 0 ? wax.moveTo(v.dx, v.dy) : wax.lineTo(v.dx, v.dy);
+    }
+    wax.close();
+    _print(c, wax, _wax, 0.95 * alpha, outline: 3);
+    c.drawCircle(from, r * 0.72, _line(_parchment, 1.8, alpha));
+    _print(
+      c,
+      _diamond(from, r * 0.62, r * 0.9),
+      _parchment,
+      alpha,
+      outline: 1.5,
     );
-    _ring(c, from, r, gold, 3, alpha);
-    _ring(c, from, r * 0.78, gold, 1.5, alpha * 0.8);
-    _icon(c, Icons.gavel, from, 26 * scale, gold, alpha: alpha, glow: false);
     final dust = _seg(0.3, 0.7);
-    _ring(c, from, r + 30 * dust, gold, 2, dust > 0 ? (1 - dust) * alpha : 0);
+    if (dust > 0 && dust < 1) {
+      _dots(c, from, r + 34 * dust, _parchment, 0.5 * (1 - dust) * alpha);
+    }
+    _ring(
+      c,
+      from,
+      r + 30 * dust,
+      _parchment,
+      2,
+      dust > 0 ? (1 - dust) * alpha : 0,
+    );
   }
 
   @override

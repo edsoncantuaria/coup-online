@@ -103,13 +103,21 @@ mesma conexão: `OnlineGameController.shared(connection)`.
 
 ### Onde o servidor guarda os dados
 
-Em JSON, na pasta `DATA_DIR` (padrão `server/data/`, fora do git):
+Num banco SQLite, `intriga.db`, na pasta `DATA_DIR` (padrão `server/data/`,
+fora do git). Usa o `node:sqlite` embutido no Node (22.16 ou mais novo), sem
+dependência extra. Tabelas:
 
-- `accounts.json`: contas e sessões. A senha fica só como hash scrypt com
-  sal aleatório; das sessões fica só o sha256 do token.
-- `reports.json`: `reports` (cada denúncia, com quem, quem, sala, motivo e
-  observação) e `counts` (total por jogador denunciado, por conta ou
-  `guest:<nome>`). Ainda não há painel; consulte o arquivo direto.
+- `users`, `sessions` e `friend_links`: contas, sessões e amizades. A senha
+  fica só como hash scrypt com sal aleatório; das sessões fica só o sha256 do
+  token.
+- `reports`: cada denúncia (quem, contra quem, sala, motivo e observação).
+  Ainda não há painel; consulte direto, por exemplo o total por jogador:
+  `sqlite3 server/data/intriga.db "SELECT target_name, COUNT(*) FROM reports GROUP BY target_key"`.
+
+O esquema sobe sozinho na partida (`server/src/store/Database.ts`). Quem tinha
+os antigos `accounts.json` e `reports.json` na pasta tem tudo importado na
+primeira subida; os arquivos viram `*.imported`. Para backup, copie
+`intriga.db` com o servidor parado (ou use `sqlite3 intriga.db ".backup copia.db"`).
 
 Ajustes por variável de ambiente: `QUEUE_BOT_FILL_MS` (20000),
 `QUEUE_GATHER_MS` (8000), `QUEUE_MIN_PLAYERS` (4), `QUEUE_BOT_FILL_TARGET` (4),
